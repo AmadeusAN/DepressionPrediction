@@ -1,3 +1,4 @@
 /model/component/emotion-path/model.onnx
 /model/component/emotion-path/model.yaml
 /cache/model.zip
+/model/pretrained_model
