@@ -2,3 +2,6 @@
 /model/component/emotion-path/model.yaml
 /cache/model.zip
 /model/pretrained_model
+/dataset/EATD-Corpus
+/model/component/emotion-path/cache
+/model/component/emotion-path/model
