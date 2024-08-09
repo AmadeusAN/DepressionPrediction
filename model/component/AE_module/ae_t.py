@@ -21,7 +21,6 @@ class Encoder(nn.Module):
         
         
         cur_input_size = self.input_size
-        cur_output_size = 0
         if (input_size / (math.pow(2,num_layers))) > hidden_size:
             for i in range(num_layers - 1):
                 output_size = cur_input_size - cur_input_size // 2
@@ -57,15 +56,14 @@ class Decoder(nn.Module):
         self.num_layers = num_layers
         self.decoder_layers = nn.ModuleList()
         cur_input_size = self.output_size
-        cur_output_size = 0
         if (output_size / (math.pow(2,num_layers))) > hidden_size:
             for i in range(num_layers - 1):
                 output_size = cur_input_size - cur_input_size // 2
-                self.decoder_layers.append(nn.Linear(output_size,cur_input_size))
+                self.decoder_layers.append(nn.Linear(output_size,cur_input_size))   # 需要交换顺序
                 self.decoder_layers.append(nn.ReLU())
                 self.decoder_layers.append(nn.Dropout(dropout))
                 cur_input_size = output_size
-            self.decoder_layers.append(nn.Linear(hidden_size,cur_input_size))
+            self.decoder_layers.append(nn.Linear(hidden_size,cur_input_size))   # 需要交换顺序
         else:
             diff = (self.output_size - self.hidden_size)//self.num_layers
             for i in range(num_layers - 1):
