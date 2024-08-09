@@ -1,7 +1,7 @@
-/model/component/emotion-path/model.onnx
-/model/component/emotion-path/model.yaml
+/model/component/emotion_path/model/model.onnx
+/model/component/emotion_path/modal/model.yaml
 /cache/model.zip
 /model/pretrained_model
 /dataset/EATD-Corpus
-/model/component/emotion-path/cache
-/model/component/emotion-path/model
+/model/component/emotion_path/cache
+/model/component/emotion_path/model
