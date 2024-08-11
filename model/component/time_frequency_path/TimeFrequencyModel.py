@@ -73,9 +73,9 @@ class Shrink(nn.Module):
         return torch.squeeze(self.inner_net(x))
 
 
-class TimeFrequencyModel(nn.Module):
+class TFModel(nn.Module):
     def __init__(self,need_padding:bool = True):
-        super(TimeFrequencyModel, self).__init__()
+        super(TFModel, self).__init__()
         self.need_padding = need_padding
         self.se_module = SE_module()
         self.shrink = Shrink()
@@ -91,7 +91,7 @@ class TimeFrequencyModel(nn.Module):
     
 
 if __name__ == '__main__':
-    timefrequncymodel = TimeFrequencyModel()
+    timefrequncymodel = TFModel()
     audio_path = r"/public1/cjh/workspace/DepressionPrediction/dataset/EATD-Corpus/train/2/positive.wav"
     waveform, sample_rate = torchaudio.load(audio_path)
     if waveform.shape[0] > 1:

@@ -21,7 +21,7 @@ class Encoder(nn.Module):
         
         
         cur_input_size = self.input_size
-        if (input_size / (math.pow(2,num_layers))) > hidden_size:
+        if (self.input_size / (math.pow(2,num_layers))) > self.hidden_size:
             for i in range(num_layers - 1):
                 output_size = cur_input_size - cur_input_size // 2
                 self.encoder_layers.append(nn.Linear(cur_input_size, output_size))
@@ -78,12 +78,25 @@ class Decoder(nn.Module):
         for module in reversed(self.decoder_layers):
             x = module(x)
         return x
-            
+
+class AE(nn.Module):
+    def __init__(self,input_channel:int = 384 , output_channel:int = 1025, hidden_channel:int = 128, encoder_layer: int = 3, decoder_layer: int = 6, dropout:float = 0.1):
+        super(AE, self).__init__()
+        self.encoder = Encoder(input_size=input_channel, hidden_size=hidden_channel, num_layers=encoder_layer, dropout=dropout)
+        self.decoder = Decoder(hidden_size=hidden_channel, output_size=output_channel, num_layers=decoder_layer, dropout=dropout)        
+        
+    def forward(self,x):
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
 
 if __name__ == "__main__":
-    encoder = Encoder(input_size=100, hidden_size=10, num_layers=3, dropout=0.1)
-    dummy_x = torch.randn(1, 100)
+    encoder = Encoder(input_size=384, hidden_size=128, num_layers=3, dropout=0.1)
+    dummy_x = torch.randn(1, 384)
+    decoder = Decoder(hidden_size=128, output_size=1025, num_layers=6, dropout=0.1)
     
-    decoder = Decoder(hidden_size=10, output_size=100, num_layers=3, dropout=0.1)
+    ae = AE()
     y = decoder(encoder(dummy_x))
+    y2 = ae(dummy_x)
     print(y.shape)
+    print(y2.shape)
