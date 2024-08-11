@@ -68,9 +68,12 @@ class Shrink(nn.Module):
 
     def forward(self,x):
         x = self.inner_net(x)
-        _,_,_,c = x.shape
-        return torch.squeeze(nn.Conv2d(in_channels=1,out_channels=1,kernel_size=(1,c))(x))
-        return torch.squeeze(self.inner_net(x))
+        b,_,_,c = x.shape
+        output = torch.squeeze(nn.Conv2d(in_channels=1,out_channels=1,kernel_size=(1,c))(x))
+        if b > 1:
+            return output
+        else:
+            return torch.unsqueeze(output,dim = 0)
 
 
 class TFModel(nn.Module):
