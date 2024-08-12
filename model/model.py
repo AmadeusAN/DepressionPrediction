@@ -16,6 +16,8 @@ from IPython.display import Audio
 from torchaudio.utils import download_asset
 import torchaudio
 
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+
 
 def preliminary_experiment():
     # load data
@@ -74,10 +76,11 @@ class Model(nn.Module):
         """
         emotion_vector = self.wav2vec(waveform)[0]
         emotion_vector = torch.concat(
-            [emotion_vector, torch.zeros(size=(emotion_vector.shape[0], 1))], dim=-1
+            [emotion_vector, torch.zeros(size=(emotion_vector.shape[0], 1)).to(device)],
+            dim=-1,
         )
         text_vector = self.sentence_model.encode(text)
-        text_vector_enhance = self.ae(torch.tensor(text_vector))
+        text_vector_enhance = self.ae(torch.tensor(text_vector).to(device))
         tf_vector = self.time_frequency_model(waveform)
         final_vector = self.gfn(text_vector_enhance, emotion_vector, tf_vector)
 
@@ -98,12 +101,24 @@ if __name__ == "__main__":
     waveform, sample_rate = torchaudio.load(audio_path)
     if waveform.shape[0] > 1:
         waveform = waveform[0]
-    waveform = torch.unsqueeze(waveform, dim=0)
+    waveform = torch.unsqueeze(waveform, dim=0).to(device)
+    dummy_y = torch.randn(size=(1, 1)).to(device)
 
     output_layer = LinearOutput()
     model = Model(output_layers=output_layer)
+    model.to(device)
+    print(f"using device: {device}")
     model.train()
-    final_vector = model(waveform, tokens)
-    print(f"final_vector: {final_vector.shape}")
 
     # 梯度计算实验
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.000001)
+    loss_fn = torch.nn.MSELoss()
+
+    for _ in range(500):
+        final_vector = model(waveform, tokens)
+        # print(f"final_vector: {final_vector.shape}")
+        loss = loss_fn(final_vector, dummy_y)
+        print(f"loss: {loss}")
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
