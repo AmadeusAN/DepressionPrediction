@@ -5,3 +5,4 @@
 /dataset/EATD-Corpus
 /model/component/emotion_path/cache
 /model/component/emotion_path/model
+/dataset/raw_ndarray
