@@ -16,8 +16,8 @@ VISUALIZE_TRAIN_DIR = os.path.join(VISUALIZE_DIR, "train")
 VISUALIZE_TEST_DIR = os.path.join(VISUALIZE_DIR, "test")
 SAVE_MODEL_NAME = "model_v1"  # 模型权重文件名称
 SAVE_LOSS_NAME = ["mse_loss", "r2_score", "rmse_loss"]  # 用到的损失名称
-BATCH_SIZE = 32
-START_LEARNING_RATE = 0.000001
+BATCH_SIZE = 16
+START_LEARNING_RATE = 0.000000001
 LR_MILESTONES = [30, 60, 90, 120, 180]
 
 device = (
@@ -46,7 +46,9 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
     """
     print(f"use {device}")
 
-    train_dataloader, test_dataloader = dataset_dataloader.get_tri_modal_dataloader()
+    train_dataloader, test_dataloader = dataset_dataloader.get_tri_modal_dataloader(
+        batch_size=BATCH_SIZE
+    )
 
     # loading model
     output_layer = LinearOutput()
