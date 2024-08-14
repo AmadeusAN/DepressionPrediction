@@ -10,10 +10,16 @@ from botocore.config import Config
 from IPython.display import Audio
 from torchaudio.utils import download_asset
 import torchaudio
+from os.path import join
 
 AUDIO_PADDING_LENGTH = 300000  # 例如，填充到 1 秒的长度，假设采样率为 16 kHz
 window_length = 2048  # 窗口长度
 hop_length = 512  # 窗口滑动步长
+
+# 一些路径。
+NDARRAY_DIR = "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray"
+NDARRAY_TRAIN_DIR = join(NDARRAY_DIR, "train")
+
 
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
@@ -61,7 +67,7 @@ class SE_module(nn.Module):
 
 
 class Shrink(nn.Module):
-    def __init__(self, shrink_size: int = 586, H_size: int = 1025):
+    def __init__(self, shrink_size: int = 1025, H_size: int = 1025):
         super(Shrink, self).__init__()
         self.shrink_size = shrink_size
         self.inner_net = nn.Sequential(
@@ -90,12 +96,13 @@ class TFModel(nn.Module):
         self.shrink = Shrink()
 
     def forward(self, x):
-        if self.need_padding:
-            x = pad_audio(x, AUDIO_PADDING_LENGTH)
-        x = torch.stft(
-            x, n_fft=window_length, hop_length=hop_length, return_complex=True
-        )
-        x = torch.stack([x.real, x.imag], dim=1)
+        # 数据预处理后，决定直接将 STFT 后的数据送入模型，而非在模型中进行 STFT。
+        # if self.need_padding:
+        #     x = pad_audio(x, AUDIO_PADDING_LENGTH)
+        # x = torch.stft(
+        #     x, n_fft=window_length, hop_length=hop_length, return_complex=True
+        # )
+        # x = torch.stack([x.real, x.imag], dim=1)
         x = self.se_module(x)
         x = self.shrink(x)
         return x
@@ -103,10 +110,20 @@ class TFModel(nn.Module):
 
 if __name__ == "__main__":
     timefrequncymodel = TFModel().to(device)
-    audio_path = r"/public1/cjh/workspace/DepressionPrediction/dataset/EATD-Corpus/train/2/positive.wav"
-    waveform, sample_rate = torchaudio.load(audio_path)
-    if waveform.shape[0] > 1:
-        waveform = waveform[0]
-    waveform = torch.unsqueeze(waveform, dim=0).to(device)
-    y = timefrequncymodel(waveform)
+    # audio_path = r"/public1/cjh/workspace/DepressionPrediction/dataset/EATD-Corpus/train/2/positive.wav"
+    # waveform, sample_rate = torchaudio.load(audio_path)
+    # if waveform.shape[0] > 1:
+    # waveform = waveform[0]
+    # waveform = torch.unsqueeze(waveform, dim=0).to(device)
+    # y = timefrequncymodel(waveform)
+    # print(y.shape)
+
+    data_np = np.load(join(NDARRAY_TRAIN_DIR, "waveform_tf_raw.npz"))["arr_0"]
+
+    print(data_np.shape)
+
+    test_input = torch.unsqueeze(torch.tensor(data_np[0]), dim=0).to(device)
+
+    y = timefrequncymodel(test_input)
+
     print(y.shape)
