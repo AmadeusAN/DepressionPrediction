@@ -35,7 +35,7 @@ def pad_audio(signal, target_length):
 
 
 class SE_module(nn.Module):
-    def __init__(self, in_channel: int = 1025, k: int = 2048):
+    def __init__(self, in_channel: int = 1024, k: int = 2048):
         super(SE_module, self).__init__()
         self.in_channel = in_channel
         self.k = k
@@ -67,7 +67,7 @@ class SE_module(nn.Module):
 
 
 class Shrink(nn.Module):
-    def __init__(self, shrink_size: int = 1025, H_size: int = 1025):
+    def __init__(self, shrink_size: int = 1024, H_size: int = 1024):
         super(Shrink, self).__init__()
         self.shrink_size = shrink_size
         self.inner_net = nn.Sequential(

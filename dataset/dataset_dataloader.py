@@ -60,6 +60,12 @@ class TextVecDataset(Dataset):
 
 
 class TriModalDataset(Dataset):
+    """元素顺序: e, t, w, l
+
+    Args:
+        Dataset (_type_): _description_
+    """
+
     def __init__(
         self,
     ):

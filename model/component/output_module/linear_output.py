@@ -6,7 +6,7 @@ import math
 class LinearOutput(nn.Module):
     def __init__(
         self,
-        input_size: int = 3075,
+        input_size: int = 3072,
         layer: int = 6,
         output_size: int = 1,
         dropout: float = 0.1,

@@ -15,7 +15,12 @@ from botocore.config import Config
 from IPython.display import Audio
 from torchaudio.utils import download_asset
 import torchaudio
-from dataset.dataset_dataloader import get_tri_train_val_dataloader
+from os.path import join
+import sys
+
+# 子级模块中导出同级别子集模块的暂时性解决方法
+sys.path.append("/public1/cjh/workspace/DepressionPrediction/dataset")
+from dataset_dataloader import get_tri_modal_dataloader
 
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
@@ -115,11 +120,11 @@ if __name__ == "__main__":
     # waveform = torch.unsqueeze(waveform, dim=0).to(device)
     # dummy_y = torch.randn(size=(1, 1)).to(device)
 
-    # output_layer = LinearOutput()
-    # model = Model(output_layers=output_layer)
-    # model.to(device)
-    # print(f"using device: {device}")
-    # model.train()
+    output_layer = LinearOutput()
+    model = Model(output_layers=output_layer)
+    model.to(device)
+    print(f"using device: {device}")
+    model.train()
 
     # # 梯度计算实验
     # optimizer = torch.optim.Adam(model.parameters(), lr=0.000001)
@@ -134,14 +139,27 @@ if __name__ == "__main__":
     #     optimizer.step()
     #     optimizer.zero_grad()
 
-    (
-        waveform_tf_train_dataloader,
-        waveform_tf_test_dataloader,
-        emotion_hidd_vec_train_dataloader,
-        emotion_hidd_vec_test_dataloader,
-        text_vec_train_dataloader,
-        text_vec_test_dataloader,
-    ) = get_tri_train_val_dataloader()
+    train_dataloader, test_dataloader = get_tri_modal_dataloader()
 
+    e, t, w, l = next(iter(train_dataloader))
+    l = torch.unsqueeze(torch.tensor([float(i) for i in l]), dim=-1).to(device)
+    print(e.shape)
+    print(t.shape)
+    print(w.shape)
+    print(l.shape)
 
-    for waveform_tf, text_vec, emotion_vec in 
+    # y = model(w.to(device), t.to(device), e.to(device))
+    # print(y.shape)
+
+    # 梯度计算实验
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.00000001)
+    loss_fn = torch.nn.MSELoss()
+
+    for _ in range(500):
+        final_vector = model(w.to(device), t.to(device), e.to(device))
+        # print(f"final_vector: {final_vector.shape}")
+        loss = loss_fn(final_vector, l)
+        print(f"loss: {loss}")
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
