@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
-from component.AE_module.ae_t import Encoder, Decoder, AE
-from component.emotion_path.Wav2vec import Wav2Vec
-from component.text_path.SentenceModel import SentenceModel
-from component.time_frequency_path.TimeFrequencyModel import TFModel
-from component.GFN_module.GFN import GFN
-from component.output_module.linear_output import LinearOutput
+from model.component.AE_module.ae_t import Encoder, Decoder, AE
+from model.component.emotion_path.Wav2vec import Wav2Vec
+from model.component.text_path.SentenceModel import SentenceModel
+from model.component.time_frequency_path.TimeFrequencyModel import TFModel
+from model.component.GFN_module.GFN import GFN
+from model.component.output_module.linear_output import LinearOutput
 import numpy as np
 import matplotlib.pyplot as plt
 import boto3

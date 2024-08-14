@@ -179,11 +179,11 @@ if __name__ == "__main__":
     print(e.shape)
     print(t.shape)
     print(w.shape)
-    print(l)
+    print(l.shape)
 
     train_input, train_label = get_tri_modal_dataloader()
     e, t, w, l = next(iter(train_input))
     print(e.shape)
     print(t.shape)
     print(w.shape)
-    print(l)
+    print(l.shape)

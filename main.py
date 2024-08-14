@@ -2,8 +2,11 @@ import os
 import numpy as np
 import torch
 from dataset import dataset_dataloader
+
 from model.model import Model
+from model.component.output_module.linear_output import LinearOutput
 from torch.optim.lr_scheduler import MultiStepLR
+import sys
 
 CUR = os.path.dirname(__file__)
 SOR_DIR = os.path.dirname(CUR)
@@ -14,7 +17,7 @@ VISUALIZE_TEST_DIR = os.path.join(VISUALIZE_DIR, "test")
 SAVE_MODEL_NAME = "model_v1"  # 模型权重文件名称
 SAVE_LOSS_NAME = ["mse_loss", "r2_score", "rmse_loss"]  # 用到的损失名称
 BATCH_SIZE = 32
-START_LEARNING_RATE = 0.001
+START_LEARNING_RATE = 0.000001
 LR_MILESTONES = [30, 60, 90, 120, 180]
 
 device = (
@@ -46,7 +49,8 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
     train_dataloader, test_dataloader = dataset_dataloader.get_tri_modal_dataloader()
 
     # loading model
-    model = Model()
+    output_layer = LinearOutput()
+    model = Model(output_layers=output_layer)
     mse_loss_fn = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=START_LEARNING_RATE)
     scheduler = MultiStepLR(optimizer=optimizer, milestones=LR_MILESTONES, gamma=0.5)
@@ -98,7 +102,7 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
                 epoch_r2 += r2_score
                 epoch_rmse += rmse_loss
                 print(
-                    f"mse_loss = {mse_loss:>6d},rmse_loss = {rmse_loss:>6d}, r2_score = {r2_score:>6d},---[{current:>5d}/{size:>5d}]"
+                    f"mse_loss = {mse_loss:>6f},rmse_loss = {rmse_loss:>6f}, r2_score = {r2_score:>6f},---[{current:>5d}/{size:>5d}]"
                 )
 
             epoch_loss /= len(train_dataloader)
@@ -227,3 +231,4 @@ if __name__ == "__main__":
     print(f"{device} detected")
 
     main(load_epoch=0, end_epoch=360, save_interval=20)
+    # print(sys.path)
