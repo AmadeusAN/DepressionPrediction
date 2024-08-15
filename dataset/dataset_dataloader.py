@@ -91,7 +91,7 @@ class TriModalDataset(Dataset):
             self.emotion_np[index],
             self.text_np[index],
             self.waveform_tf_np[index],
-            self.label[index],
+            self.label[index] / 100,
         )
 
 
@@ -152,7 +152,10 @@ def get_tri_modal_dataloader(batch_size: int = 32):
     )
 
     tri_modal_dataloader_train = DataLoader(
-        tri_modal_dataset_train, batch_size=batch_size, shuffle=True
+        tri_modal_dataset_train,
+        batch_size=batch_size,
+        shuffle=True,
+        generator=torch.Generator().manual_seed(666),
     )
     tri_modal_dataloader_test = DataLoader(
         tri_modal_dataset_test, batch_size=batch_size, shuffle=False
