@@ -25,6 +25,7 @@ class Encoder(nn.Module):
             for i in range(num_layers - 1):
                 output_size = cur_input_size - cur_input_size // 2
                 self.encoder_layers.append(nn.Linear(cur_input_size, output_size))
+                self.encoder_layers.append(nn.BatchNorm1d(output_size))
                 self.encoder_layers.append(nn.ReLU())
                 self.encoder_layers.append(nn.Dropout(dropout))
                 cur_input_size = output_size
@@ -35,6 +36,7 @@ class Encoder(nn.Module):
             for i in range(num_layers - 1):
                 output_size = cur_input_size - diff
                 self.encoder_layers.append(nn.Linear(cur_input_size, output_size))
+                self.encoder_layers.append(nn.BatchNorm1d(output_size))
                 self.encoder_layers.append(nn.ReLU())
                 self.encoder_layers.append(nn.Dropout(dropout))
                 cur_input_size = output_size
@@ -57,11 +59,12 @@ class Decoder(nn.Module):
         if (output_size / (math.pow(2, num_layers))) > hidden_size:
             for i in range(num_layers - 1):
                 output_size = cur_input_size - cur_input_size // 2
+                self.decoder_layers.append(nn.Dropout(dropout))
+                self.decoder_layers.append(nn.ReLU())
+                self.decoder_layers.append(nn.BatchNorm1d(cur_input_size))
                 self.decoder_layers.append(
                     nn.Linear(output_size, cur_input_size)
                 )  # 需要交换顺序
-                self.decoder_layers.append(nn.ReLU())
-                self.decoder_layers.append(nn.Dropout(dropout))
                 cur_input_size = output_size
             self.decoder_layers.append(
                 nn.Linear(hidden_size, cur_input_size)
@@ -70,9 +73,10 @@ class Decoder(nn.Module):
             diff = (self.output_size - self.hidden_size) // self.num_layers
             for i in range(num_layers - 1):
                 output_size = cur_input_size - diff
-                self.decoder_layers.append(nn.Linear(output_size, cur_input_size))
-                self.decoder_layers.append(nn.ReLU())
                 self.decoder_layers.append(nn.Dropout())
+                self.decoder_layers.append(nn.ReLU())
+                self.decoder_layers.append(nn.BatchNorm1d(cur_input_size))
+                self.decoder_layers.append(nn.Linear(output_size, cur_input_size))
                 cur_input_size = output_size
             self.decoder_layers.append(nn.Linear(hidden_size, cur_input_size))
 
@@ -109,16 +113,20 @@ class AE(nn.Module):
     def forward(self, x):
         x = self.encoder(x)
         x = self.decoder(x)
+        # if torch.isnan(x).any():
+        #     raise Exception("here")
         return x
 
 
 if __name__ == "__main__":
     encoder = Encoder(input_size=384, hidden_size=128, num_layers=3, dropout=0.1)
-    dummy_x = torch.randn(1, 384)
+    dummy_x = torch.randn(2, 384)
     decoder = Decoder(hidden_size=128, output_size=1025, num_layers=6, dropout=0.1)
 
     ae = AE()
-    y = decoder(encoder(dummy_x))
+    hidden_v = encoder(dummy_x)
+    print(hidden_v)
+    y = decoder(hidden_v)
     y2 = ae(dummy_x)
     print(y.shape)
     print(y2.shape)

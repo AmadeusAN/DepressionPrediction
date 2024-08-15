@@ -78,6 +78,15 @@ class Model(nn.Module):
         self.ae = AE()
         self.gfn = GFN()
         self.output = output_layers
+        self.init_param()
+
+    def init_param(
+        self,
+    ):
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.Linear)):
+                nn.init.xavier_uniform_(m.weight)
+        print(f"模型参数初始化成功")
 
     def forward(
         self,

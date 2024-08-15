@@ -7,7 +7,7 @@ class LinearOutput(nn.Module):
     def __init__(
         self,
         input_size: int = 3072,
-        layer: int = 6,
+        layer: int = 10,
         output_size: int = 1,
         dropout: float = 0.1,
     ):
@@ -28,6 +28,7 @@ class LinearOutput(nn.Module):
             for i in range(self.layer - 1):
                 output_size = cur_input_size - cur_input_size // 2
                 self.output_layer.append(nn.Linear(cur_input_size, output_size))
+                self.output_layer.append(nn.BatchNorm1d(output_size))
                 self.output_layer.append(nn.ReLU())
                 self.output_layer.append(nn.Dropout(dropout))
                 cur_input_size = output_size
@@ -38,6 +39,7 @@ class LinearOutput(nn.Module):
             for i in range(self.layer - 1):
                 output_size = cur_input_size - diff
                 self.output_layer.append(nn.Linear(cur_input_size, output_size))
+                self.output_layer.append(nn.BatchNorm1d(output_size))
                 self.output_layer.append(nn.ReLU())
                 self.output_layer.append(nn.Dropout(dropout))
                 cur_input_size = output_size

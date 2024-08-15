@@ -72,10 +72,12 @@ class Shrink(nn.Module):
         self.shrink_size = shrink_size
         self.inner_net = nn.Sequential(
             nn.Conv2d(in_channels=2, out_channels=1, kernel_size=(1, shrink_size // 3)),
+            nn.BatchNorm2d(num_features=1),
             nn.ReLU(),
             nn.Conv2d(in_channels=1, out_channels=1, kernel_size=(1, shrink_size // 2)),
+            nn.BatchNorm2d(num_features=1),
             nn.ReLU(),
-            nn.AdaptiveAvgPool2d(output_size=(H_size, 1)),
+            nn.AdaptiveMaxPool2d(output_size=(H_size, 1)),
         )
 
     def forward(self, x):
@@ -105,6 +107,8 @@ class TFModel(nn.Module):
         # x = torch.stack([x.real, x.imag], dim=1)
         x = self.se_module(x)
         x = self.shrink(x)
+        # if torch.isnan(x).any():
+        #     raise Exception("here")
         return x
 
 

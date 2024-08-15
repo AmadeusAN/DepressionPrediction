@@ -17,7 +17,7 @@ VISUALIZE_TEST_DIR = os.path.join(VISUALIZE_DIR, "test")
 SAVE_MODEL_NAME = "model_v1"  # 模型权重文件名称
 SAVE_LOSS_NAME = ["mse_loss", "r2_score", "rmse_loss"]  # 用到的损失名称
 BATCH_SIZE = 16
-START_LEARNING_RATE = 0.000000001
+START_LEARNING_RATE = 0.000001
 LR_MILESTONES = [30, 60, 90, 120, 180]
 
 device = (
@@ -85,6 +85,10 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
             for batch, (e, t, w, y) in enumerate(train_dataloader):
                 e, t, w, y = e.to(device), t.to(device), w.to(device), y.to(device)
                 y_hat = model(w, t, e)
+
+                # print(f"y_hat:{y_hat}")
+                # print(f"y:{y}")
+
                 mse_loss = mse_loss_fn(y_hat, y)
                 r2_score = r2_loss_fn(y_hat, y)
                 rmse_loss = torch.sqrt(mse_loss)
@@ -224,11 +228,14 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
 
 
 if __name__ == "__main__":
-    device = (
-        "cuda"
-        if torch.cuda.is_available()
-        else "mps" if torch.backends.mps.is_available() else "cpu"
-    )
+    # device = (
+    #     "cuda"
+    #     if torch.cuda.is_available()
+    #     else "mps" if torch.backends.mps.is_available() else "cpu"
+    # )
+
+    torch.set_anomaly_enabled(True)
+    torch.set_deterministic_debug_mode(True)
 
     print(f"{device} detected")
 

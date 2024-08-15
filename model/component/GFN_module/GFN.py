@@ -40,7 +40,9 @@ class MultiLayerNeuralFusionNetwork(nn.Module):
 
     def __init__(self, input_dim):
         super().__init__()
-        self.fusion_layer = nn.Linear(2 * input_dim, input_dim)
+        self.fusion_layer = nn.Sequential(
+            nn.Linear(2 * input_dim, input_dim), nn.BatchNorm1d(num_features=input_dim)
+        )
 
     def forward(self, x_1, x_2):
         return self.fusion_layer(torch.cat([x_1, x_2], dim=1))
@@ -80,6 +82,10 @@ class SecondLayer(nn.Module):
         a_13 = torch.exp(a_13_hat) / (torch.exp(a_12_hat) + torch.exp(a_23_hat))
         a_23 = torch.exp(a_23_hat) / (torch.exp(a_12_hat) + torch.exp(a_13_hat))
 
+        # a_12 = a_12_hat / (a_13_hat + a_23_hat)
+        # a_13 = a_13_hat / (a_12_hat + a_23_hat)
+        # a_23 = a_23_hat / (a_12_hat + a_13_hat)
+
         B = torch.sum(
             torch.stack([a_12 * V_12, a_13 * V_13, a_23 * V_23], dim=1), dim=1
         )
@@ -118,6 +124,9 @@ class fusion_layer_for_thirdmodal(nn.Module):
         a_1_23 = torch.exp(a_1_23_hat) / (torch.exp(a_2_13_hat) + torch.exp(a_3_12_hat))
         a_2_13 = torch.exp(a_2_13_hat) / (torch.exp(a_1_23_hat) + torch.exp(a_3_12_hat))
         a_3_12 = torch.exp(a_3_12_hat) / (torch.exp(a_1_23_hat) + torch.exp(a_2_13_hat))
+        # a_1_23 = a_1_23_hat / (a_2_13_hat + a_3_12_hat)
+        # a_2_13 = a_2_13_hat / (a_1_23_hat + a_3_12_hat)
+        # a_3_12 = a_3_12_hat / (a_1_23_hat + a_2_13_hat)
 
         return V_1_23, V_2_13, V_3_12, a_1_23, a_2_13, a_3_12
 
@@ -161,12 +170,18 @@ class GFN(nn.Module):
 
     def forward(self, x_1, x_2, x_3):
         U, a_1, a_2, a_3 = self.first_layer(x_1, x_2, x_3)
+        # if torch.isnan(U).any():
+        #     raise Exception("here")
         B, a_12, a_13, a_23, V_12, V_13, V_23 = self.second_layer(
             x_1, x_2, x_3, a_1, a_2, a_3
         )
+        # if torch.isnan(B).any():
+        #     raise Exception("here")
         O = self.third_layer(
             x_1, x_2, x_3, V_12, V_13, V_23, a_1, a_2, a_3, a_12, a_13, a_23
         )
+        # if torch.isnan(O).any():
+        #     raise Exception("here")
         return torch.concat([U, B, O], dim=1)
 
 
