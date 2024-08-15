@@ -1,3 +1,5 @@
+import itertools
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,16 +22,22 @@ class FirstLayer(nn.Module):
         super().__init__()
         self.modal_attention_network = modal_attention_network(input_dim, 1, dropout)
 
-    def forward(self, x_1, x_2, x_3):
-        a_1 = self.modal_attention_network(x_1)
-        a_2 = self.modal_attention_network(x_2)
-        a_3 = self.modal_attention_network(x_3)
-        U = (
-            1
-            / 3
-            * torch.sum(torch.stack([a_1 * x_1, a_2 * x_2, a_3 * x_3], dim=1), dim=1)
-        )
-        return U, a_1, a_2, a_3
+    # def forward(self, x_1, x_2, x_3):
+    #     a_1 = self.modal_attention_network(x_1)
+    #     a_2 = self.modal_attention_network(x_2)
+    #     a_3 = self.modal_attention_network(x_3)
+    #     U = (a_1 * x_1 + a_2 * x_2 + a_3 * x_3) / 3
+    #     # (
+    #     #     1
+    #     #     / 3
+    #     #     * torch.sum(torch.stack([a_1 * x_1, a_2 * x_2, a_3 * x_3], dim=1), dim=1)
+    #     # )
+    #     return U, a_1, a_2, a_3
+
+    def forward(self, xs):
+        a = [self.modal_attention_network(x) for x in xs]
+        U = sum(ai * x for ai, x in zip(a, xs)) / 3
+        return U, a
 
 
 class MultiLayerNeuralFusionNetwork(nn.Module):
@@ -53,12 +61,33 @@ class SecondLayer(nn.Module):
         super().__init__()
         self.multilayer_neural_fusion_network = MultiLayerNeuralFusionNetwork(k)
 
-    def forward(self, x_1, x_2, x_3, a_1, a_2, a_3):
+    def forward(self, xs, alphas):
+        n = len(xs)
+        V = [
+            self.multilayer_neural_fusion_network(xs[a], xs[b])
+            for a, b in itertools.combinations(range(n), 2)
+        ]
+        S = [
+            torch.sum(xs[a] * xs[b], dim=1, keepdim=True)
+            for a, b in itertools.combinations(range(n), 2)
+        ]
+        a_hat = [
+            (alphas[a] + alphas[b]) / (S[i] + 0.5)
+            for i, (a, b) in enumerate(itertools.combinations(range(n), 2))
+        ]
+        se = sum(torch.exp(a) for a in a_hat)
+        a = [torch.exp(a_hat[i]) / se for i in range(n)]
+        B = sum([a[i] * V[i] for i in range(n)])
+        return B, a, V
+
+    def forward0(self, x_1, x_2, x_3, a_1, a_2, a_3):
         V_12 = self.multilayer_neural_fusion_network(x_1, x_2)
         V_13 = self.multilayer_neural_fusion_network(x_1, x_3)
         V_23 = self.multilayer_neural_fusion_network(x_2, x_3)
 
         # S_12 = x_1 @ x_2.T
+
+        # torch.sum(x_1 * x_2, dim=1)
         S_12 = torch.squeeze(
             torch.matmul(torch.unsqueeze(x_1, dim=1), torch.unsqueeze(x_2, dim=2)),
             dim=1,
@@ -78,9 +107,10 @@ class SecondLayer(nn.Module):
         a_13_hat = (a_1 + a_3) / (S_13 + 0.5)
         a_23_hat = (a_2 + a_3) / (S_23 + 0.5)
 
-        a_12 = torch.exp(a_12_hat) / (torch.exp(a_13_hat) + torch.exp(a_23_hat))
-        a_13 = torch.exp(a_13_hat) / (torch.exp(a_12_hat) + torch.exp(a_23_hat))
-        a_23 = torch.exp(a_23_hat) / (torch.exp(a_12_hat) + torch.exp(a_13_hat))
+        aaa = torch.exp(a_12_hat) + torch.exp(a_13_hat) + torch.exp(a_23_hat)
+        a_12 = torch.exp(a_12_hat) / aaa
+        a_13 = torch.exp(a_13_hat) / aaa
+        a_23 = torch.exp(a_23_hat) / aaa
 
         # a_12 = a_12_hat / (a_13_hat + a_23_hat)
         # a_13 = a_13_hat / (a_12_hat + a_23_hat)
@@ -121,6 +151,7 @@ class fusion_layer_for_thirdmodal(nn.Module):
         a_1_23_hat = (a_1 + a_23) / (S_1_23 + 0.5)
         a_2_13_hat = (a_2 + a_13) / (S_2_13 + 0.5)
         a_3_12_hat = (a_3 + a_12) / (S_3_12 + 0.5)
+        (torch.exp(a_2_13_hat) + torch.exp(a_3_12_hat))
         a_1_23 = torch.exp(a_1_23_hat) / (torch.exp(a_2_13_hat) + torch.exp(a_3_12_hat))
         a_2_13 = torch.exp(a_2_13_hat) / (torch.exp(a_1_23_hat) + torch.exp(a_3_12_hat))
         a_3_12 = torch.exp(a_3_12_hat) / (torch.exp(a_1_23_hat) + torch.exp(a_2_13_hat))
@@ -166,23 +197,42 @@ class GFN(nn.Module):
         super().__init__()
         self.first_layer = FirstLayer(k, drop_out)
         self.second_layer = SecondLayer(k)
-        self.third_layer = ThirdLayer(k)
+        # self.third_layer = ThirdLayer(k)
+        self.third_layer = SecondLayer(k)
 
-    def forward(self, x_1, x_2, x_3):
-        U, a_1, a_2, a_3 = self.first_layer(x_1, x_2, x_3)
-        # if torch.isnan(U).any():
-        #     raise Exception("here")
-        B, a_12, a_13, a_23, V_12, V_13, V_23 = self.second_layer(
-            x_1, x_2, x_3, a_1, a_2, a_3
-        )
-        # if torch.isnan(B).any():
-        #     raise Exception("here")
-        O = self.third_layer(
-            x_1, x_2, x_3, V_12, V_13, V_23, a_1, a_2, a_3, a_12, a_13, a_23
-        )
-        # if torch.isnan(O).any():
-        #     raise Exception("here")
+    def forward(self, *xs):
+        U, a1 = self.first_layer(xs)
+
+        # B, a_12, a_13, a_23, V_12, V_13, V_23 = self.second_layer(
+        #     x_1, x_2, x_3, a_1, a_2, a_3
+        # )
+        B, a2, V = self.second_layer(xs, a1)
+
+        # O = self.third_layer(
+        #     x_1, x_2, x_3, V_12, V_13, V_23, a_1, a_2, a_3, a_12, a_13, a_23
+        # )
+        O, _, _ = self.third_layer(list(xs) + list(V), list(a1) + list(a2))
+
         return torch.concat([U, B, O], dim=1)
+
+    # def forward(self, x_1, x_2, x_3):
+    #     U, a_1, a_2, a_3 = self.first_layer(x_1, x_2, x_3)
+
+    #     # B, a_12, a_13, a_23, V_12, V_13, V_23 = self.second_layer(
+    #     #     x_1, x_2, x_3, a_1, a_2, a_3
+    #     # )
+    #     B, a, V = self.second_layer(
+    #         [x_1, x_2, x_3], [a_1, a_2, a_3]
+    #     )
+
+    #     # O = self.third_layer(
+    #     #     x_1, x_2, x_3, V_12, V_13, V_23, a_1, a_2, a_3, a_12, a_13, a_23
+    #     # )
+    #     O, _, _ = self.third_layer(
+    #         [x_1, x_2, x_3] + V, [a_1, a_2, a_3] + a
+    #     )
+
+    #     return torch.concat([U, B, O], dim=1)
 
 
 if __name__ == "__main__":

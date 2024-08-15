@@ -83,9 +83,9 @@ class Model(nn.Module):
     def init_param(
         self,
     ):
-        for m in self.modules():
-            if isinstance(m, (nn.Conv2d, nn.Linear)):
-                nn.init.xavier_uniform_(m.weight)
+        # for m in self.modules():
+        #     if isinstance(m, (nn.Conv2d, nn.Linear)):
+        #         nn.init.xavier_uniform_(m.weight)
         print(f"模型参数初始化成功")
 
     def forward(
@@ -107,12 +107,14 @@ class Model(nn.Module):
         # text_vector = self.sentence_model.encode(text)
         text_vector_enhance = self.ae(text_vec)
         tf_vector = self.time_frequency_model(waveform_tf_vec)
+        
         final_vector = self.gfn(text_vector_enhance, emotion_vec, tf_vector)
 
         if self.output is not None:
-            final_vector = self.output(final_vector)
+            # final_vector = self.output(final_vector)
+            final_vector2 = self.output(final_vector)
 
-        return final_vector
+        return final_vector2
 
 
 if __name__ == "__main__":

@@ -1,6 +1,10 @@
 import os
+
+os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+
 import numpy as np
 import torch
+import torch.nn as nn
 from dataset import dataset_dataloader
 
 from model.model import Model
@@ -17,7 +21,7 @@ VISUALIZE_TEST_DIR = os.path.join(VISUALIZE_DIR, "test")
 SAVE_MODEL_NAME = "model_v1"  # 模型权重文件名称
 SAVE_LOSS_NAME = ["mse_loss", "r2_score", "rmse_loss"]  # 用到的损失名称
 BATCH_SIZE = 16
-START_LEARNING_RATE = 0.000001
+START_LEARNING_RATE = 1e-6  # 0.000001
 LR_MILESTONES = [30, 60, 90, 120, 180]
 
 device = (
@@ -51,7 +55,9 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
     )
 
     # loading model
-    output_layer = LinearOutput()
+    # output_layer = LinearOutput(layer=2)
+    output_layer = nn.Sequential(nn.ReLU(), nn.BatchNorm1d(3072), nn.Linear(3072, 1))
+    # output_layer = nn.Sequential(nn.Linear(3072, 1), nn.Sigmoid())
     model = Model(output_layers=output_layer)
     mse_loss_fn = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=START_LEARNING_RATE)
@@ -74,157 +80,196 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
     TEST_RMSE_Loss = []
     cur_epoch = 0
 
-    try:
-        # main training logic
-        size = len(train_dataloader.dataset)
-        for eph in range(load_epoch + 1, end_epoch + 1):
-            print(f"epoch:{eph} ", "*" * 100)
-            epoch_loss = 0.0
-            epoch_r2 = 0.0
-            epoch_rmse = 0.0
-            for batch, (e, t, w, y) in enumerate(train_dataloader):
+    cur_epoch = run_epoch(
+        load_epoch,
+        end_epoch,
+        save_interval,
+        train_dataloader,
+        test_dataloader,
+        model,
+        mse_loss_fn,
+        optimizer,
+        scheduler,
+        MSE_Loss,
+        R2_Score,
+        RMSE_Loss,
+        TEST_MSE_Loss,
+        TEST_R2_Score,
+        TEST_RMSE_Loss,
+    )
+
+    # try:
+    #     # main training logic
+    #     cur_epoch = run_epoch(load_epoch, end_epoch, save_interval, train_dataloader, test_dataloader, model, mse_loss_fn, optimizer, scheduler, MSE_Loss, R2_Score, RMSE_Loss, TEST_MSE_Loss, TEST_R2_Score, TEST_RMSE_Loss)
+
+    # finally:
+    #     print(f"Are you sure to save loss data? [y/n]")
+    #     y = input()
+    #     if y == "y" or y == "Y":
+    #         print(f"saving loss data" + "*" * 20)
+
+    #         # 创建对应的损失文件夹
+    #         if not os.path.exists(VISUALIZE_TRAIN_DIR):
+    #             os.mkdir(VISUALIZE_TRAIN_DIR)
+    #         if not os.path.exists(VISUALIZE_TEST_DIR):
+    #             os.mkdir(VISUALIZE_TEST_DIR)
+
+    #         np.savez(
+    #             os.path.join(
+    #                 VISUALIZE_TRAIN_DIR,
+    #                 SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
+    #             ),
+    #             data=MSE_Loss,
+    #         )
+
+    #         np.savez(
+    #             os.path.join(
+    #                 VISUALIZE_TEST_DIR,
+    #                 f"test_" + SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
+    #             ),
+    #             data=TEST_MSE_Loss,
+    #         )
+
+    #         np.savez(
+    #             os.path.join(
+    #                 VISUALIZE_TRAIN_DIR,
+    #                 SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
+    #             ),
+    #             data=R2_Score,
+    #         )
+
+    #         np.savez(
+    #             os.path.join(
+    #                 VISUALIZE_TEST_DIR,
+    #                 f"test_" + SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
+    #             ),
+    #             data=TEST_R2_Score,
+    #         )
+
+    #         np.savez(
+    #             os.path.join(
+    #                 VISUALIZE_TRAIN_DIR,
+    #                 SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
+    #             ),
+    #             data=RMSE_Loss,
+    #         )
+
+    #         np.savez(
+    #             os.path.join(
+    #                 VISUALIZE_TEST_DIR,
+    #                 f"test_" + SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
+    #             ),
+    #             data=TEST_RMSE_Loss,
+    #         )
+
+    #         print(f"save success")
+    #     else:
+    #         print(f"save cancel, discard data")
+
+
+def run_epoch(
+    load_epoch,
+    end_epoch,
+    save_interval,
+    train_dataloader,
+    test_dataloader,
+    model,
+    mse_loss_fn,
+    optimizer,
+    scheduler,
+    MSE_Loss,
+    R2_Score,
+    RMSE_Loss,
+    TEST_MSE_Loss,
+    TEST_R2_Score,
+    TEST_RMSE_Loss,
+):
+    size = len(train_dataloader.dataset)
+    for eph in range(load_epoch + 1, end_epoch + 1):
+        print(f"epoch:{eph} ", "*" * 100)
+        epoch_loss = 0.0
+        epoch_r2 = 0.0
+        epoch_rmse = 0.0
+        for batch, (e, t, w, y) in enumerate(train_dataloader):
+            e, t, w, y = e.to(device), t.to(device), w.to(device), y.to(device)
+            y_hat = model(w, t, e)
+
+            # print(f"y_hat:{y_hat}")
+            # print(f"y:{y}")
+
+            mse_loss = mse_loss_fn(y_hat, y)
+            r2_score = r2_loss_fn(y_hat, y)
+            rmse_loss = torch.sqrt(mse_loss)
+
+            mse_loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+
+            # record loss
+            current, mse_loss, r2_score, rmse_loss = (
+                (batch + 1) * len(e),
+                mse_loss.item(),
+                r2_score.item(),
+                rmse_loss.item(),
+            )
+            epoch_loss += mse_loss
+            epoch_r2 += r2_score
+            epoch_rmse += rmse_loss
+            print(
+                f"mse_loss = {mse_loss:>6f},rmse_loss = {rmse_loss:>6f}, r2_score = {r2_score:>6f},---[{current:>5d}/{size:>5d}]"
+            )
+
+        epoch_loss /= len(train_dataloader)
+        epoch_r2 /= len(train_dataloader)
+        epoch_rmse /= len(train_dataloader)
+        MSE_Loss.append(epoch_loss)
+        R2_Score.append(epoch_r2)
+        RMSE_Loss.append(epoch_rmse)
+        print(
+            f"train mse_lost = {epoch_loss:>12f}, rmse_loss = {epoch_rmse:>12f}, r2 = {epoch_r2:>12f}"
+        )
+        scheduler.step()
+        # ===============================================================================================================================
+        # testing logic
+        model.eval()
+        num_batches = len(test_dataloader)
+        (
+            test_mse_loss,
+            test_r2_score,
+            test_rmse_loss,
+        ) = (0.0, 0.0, 0.0)
+        with torch.no_grad():
+            for e, t, w, y in test_dataloader:
                 e, t, w, y = e.to(device), t.to(device), w.to(device), y.to(device)
+
                 y_hat = model(w, t, e)
-
-                # print(f"y_hat:{y_hat}")
-                # print(f"y:{y}")
-
                 mse_loss = mse_loss_fn(y_hat, y)
                 r2_score = r2_loss_fn(y_hat, y)
                 rmse_loss = torch.sqrt(mse_loss)
 
-                mse_loss.backward()
-                optimizer.step()
-                optimizer.zero_grad()
+                test_mse_loss += mse_loss.item()
+                test_r2_score += r2_score.item()
+                test_rmse_loss += rmse_loss.item()
+        test_mse_loss /= num_batches
+        test_r2_score /= num_batches
+        test_rmse_loss /= num_batches
+        TEST_MSE_Loss.append(test_mse_loss)
+        TEST_R2_Score.append(test_r2_score)
+        TEST_RMSE_Loss.append(test_rmse_loss)
+        print(
+            f"test  mse_loss = {test_mse_loss:>12f}, rmse_loss = {test_rmse_loss:>12f}, r2 = {test_r2_score:>12f}"
+        )
+        model.train()
 
-                # record loss
-                current, mse_loss, r2_score, rmse_loss = (
-                    (batch + 1) * len(e),
-                    mse_loss.item(),
-                    r2_score.item(),
-                    rmse_loss.item(),
-                )
-                epoch_loss += mse_loss
-                epoch_r2 += r2_score
-                epoch_rmse += rmse_loss
-                print(
-                    f"mse_loss = {mse_loss:>6f},rmse_loss = {rmse_loss:>6f}, r2_score = {r2_score:>6f},---[{current:>5d}/{size:>5d}]"
-                )
-
-            epoch_loss /= len(train_dataloader)
-            epoch_r2 /= len(train_dataloader)
-            epoch_rmse /= len(train_dataloader)
-            MSE_Loss.append(epoch_loss)
-            R2_Score.append(epoch_r2)
-            RMSE_Loss.append(epoch_rmse)
-            print(
-                f"train mse_lost = {epoch_loss:>12f}, rmse_loss = {epoch_rmse:>12f}, r2 = {epoch_r2:>12f}"
-            )
-            scheduler.step()
-            # ===============================================================================================================================
-            # testing logic
-            model.eval()
-            num_batches = len(test_dataloader)
-            (
-                test_mse_loss,
-                test_r2_score,
-                test_rmse_loss,
-            ) = (0.0, 0.0, 0.0)
-            with torch.no_grad():
-                for e, t, w, y in test_dataloader:
-                    e, t, w, y = e.to(device), t.to(device), w.to(device), y.to(device)
-
-                    y_hat = model(w, t, e)
-                    mse_loss = mse_loss_fn(y_hat, y)
-                    r2_score = r2_loss_fn(y_hat, y)
-                    rmse_loss = torch.sqrt(mse_loss)
-
-                    test_mse_loss += mse_loss.item()
-                    test_r2_score += r2_score.item()
-                    test_rmse_loss += rmse_loss.item()
-            test_mse_loss /= num_batches
-            test_r2_score /= num_batches
-            test_rmse_loss /= num_batches
-            TEST_MSE_Loss.append(test_mse_loss)
-            TEST_R2_Score.append(test_r2_score)
-            TEST_RMSE_Loss.append(test_rmse_loss)
-            print(
-                f"test  mse_loss = {test_mse_loss:>12f}, rmse_loss = {test_rmse_loss:>12f}, r2 = {test_r2_score:>12f}"
-            )
-            model.train()
-
-            # save model parameters each [save_interval] epochs
-            if eph % save_interval == 0:
-                torch.save(
-                    model.state_dict(),
-                    os.path.join(CHECKPOINT_DIR, SAVE_MODEL_NAME + f"_{str(eph)}"),
-                )
-
-            cur_epoch = eph
-
-    finally:
-        print(f"Are you sure to save loss data? [y/n]")
-        y = input()
-        if y == "y" or y == "Y":
-            print(f"saving loss data" + "*" * 20)
-
-            # 创建对应的损失文件夹
-            if not os.path.exists(VISUALIZE_TRAIN_DIR):
-                os.mkdir(VISUALIZE_TRAIN_DIR)
-            if not os.path.exists(VISUALIZE_TEST_DIR):
-                os.mkdir(VISUALIZE_TEST_DIR)
-
-            np.savez(
-                os.path.join(
-                    VISUALIZE_TRAIN_DIR,
-                    SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=MSE_Loss,
+        # save model parameters each [save_interval] epochs
+        if eph % save_interval == 0:
+            torch.save(
+                model.state_dict(),
+                os.path.join(CHECKPOINT_DIR, SAVE_MODEL_NAME + f"_{str(eph)}"),
             )
 
-            np.savez(
-                os.path.join(
-                    VISUALIZE_TEST_DIR,
-                    f"test_" + SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=TEST_MSE_Loss,
-            )
-
-            np.savez(
-                os.path.join(
-                    VISUALIZE_TRAIN_DIR,
-                    SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=R2_Score,
-            )
-
-            np.savez(
-                os.path.join(
-                    VISUALIZE_TEST_DIR,
-                    f"test_" + SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=TEST_R2_Score,
-            )
-
-            np.savez(
-                os.path.join(
-                    VISUALIZE_TRAIN_DIR,
-                    SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=RMSE_Loss,
-            )
-
-            np.savez(
-                os.path.join(
-                    VISUALIZE_TEST_DIR,
-                    f"test_" + SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=TEST_RMSE_Loss,
-            )
-
-            print(f"save success")
-        else:
-            print(f"save cancel, discard data")
+        cur_epoch = eph
+    return cur_epoch
 
 
 if __name__ == "__main__":
@@ -234,8 +279,9 @@ if __name__ == "__main__":
     #     else "mps" if torch.backends.mps.is_available() else "cpu"
     # )
 
-    torch.set_anomaly_enabled(True)
-    torch.set_deterministic_debug_mode(True)
+    # 启用异常检测模式
+    torch.autograd.set_detect_anomaly(True)
+    torch.use_deterministic_algorithms(True)
 
     print(f"{device} detected")
 
