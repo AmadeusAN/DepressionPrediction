@@ -17,8 +17,8 @@ VISUALIZE_TEST_DIR = os.path.join(VISUALIZE_DIR, "test")
 SAVE_MODEL_NAME = "model_v1"  # 模型权重文件名称
 SAVE_LOSS_NAME = ["mse_loss", "r2_score", "rmse_loss"]  # 用到的损失名称
 BATCH_SIZE = 16
-START_LEARNING_RATE = 0.000001
-LR_MILESTONES = [30, 60, 90, 120, 180]
+START_LEARNING_RATE = 1e-4
+LR_MILESTONES = [50, 100, 150, 200, 250, 300, 400]
 
 device = (
     "cuda:1"
@@ -234,8 +234,8 @@ if __name__ == "__main__":
     #     else "mps" if torch.backends.mps.is_available() else "cpu"
     # )
 
-    torch.set_anomaly_enabled(True)
-    torch.set_deterministic_debug_mode(True)
+    # torch.set_anomaly_enabled(True)
+    # torch.set_deterministic_debug_mode(True)
 
     print(f"{device} detected")
 

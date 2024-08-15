@@ -79,7 +79,7 @@ class TriModalDataset(Dataset):
             "arr_0"
         ]
 
-        self.label = np.load(join(NDARRAY_TRAIN_DIR, "labels.npz"))["arr_0"]
+        self.label = np.load(join(NDARRAY_TRAIN_DIR, "labels.npz"))["arr_0"] / 100
 
     def __len__(
         self,

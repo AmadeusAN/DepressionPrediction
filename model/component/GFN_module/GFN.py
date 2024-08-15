@@ -78,13 +78,13 @@ class SecondLayer(nn.Module):
         a_13_hat = (a_1 + a_3) / (S_13 + 0.5)
         a_23_hat = (a_2 + a_3) / (S_23 + 0.5)
 
-        a_12 = torch.exp(a_12_hat) / (torch.exp(a_13_hat) + torch.exp(a_23_hat))
-        a_13 = torch.exp(a_13_hat) / (torch.exp(a_12_hat) + torch.exp(a_23_hat))
-        a_23 = torch.exp(a_23_hat) / (torch.exp(a_12_hat) + torch.exp(a_13_hat))
+        # a_12 = torch.exp(a_12_hat) / (torch.exp(a_13_hat) + torch.exp(a_23_hat))
+        # a_13 = torch.exp(a_13_hat) / (torch.exp(a_12_hat) + torch.exp(a_23_hat))
+        # a_23 = torch.exp(a_23_hat) / (torch.exp(a_12_hat) + torch.exp(a_13_hat))
 
-        # a_12 = a_12_hat / (a_13_hat + a_23_hat)
-        # a_13 = a_13_hat / (a_12_hat + a_23_hat)
-        # a_23 = a_23_hat / (a_12_hat + a_13_hat)
+        a_12 = a_12_hat / (a_13_hat + a_23_hat)
+        a_13 = a_13_hat / (a_12_hat + a_23_hat)
+        a_23 = a_23_hat / (a_12_hat + a_13_hat)
 
         B = torch.sum(
             torch.stack([a_12 * V_12, a_13 * V_13, a_23 * V_23], dim=1), dim=1
@@ -121,12 +121,12 @@ class fusion_layer_for_thirdmodal(nn.Module):
         a_1_23_hat = (a_1 + a_23) / (S_1_23 + 0.5)
         a_2_13_hat = (a_2 + a_13) / (S_2_13 + 0.5)
         a_3_12_hat = (a_3 + a_12) / (S_3_12 + 0.5)
-        a_1_23 = torch.exp(a_1_23_hat) / (torch.exp(a_2_13_hat) + torch.exp(a_3_12_hat))
-        a_2_13 = torch.exp(a_2_13_hat) / (torch.exp(a_1_23_hat) + torch.exp(a_3_12_hat))
-        a_3_12 = torch.exp(a_3_12_hat) / (torch.exp(a_1_23_hat) + torch.exp(a_2_13_hat))
-        # a_1_23 = a_1_23_hat / (a_2_13_hat + a_3_12_hat)
-        # a_2_13 = a_2_13_hat / (a_1_23_hat + a_3_12_hat)
-        # a_3_12 = a_3_12_hat / (a_1_23_hat + a_2_13_hat)
+        # a_1_23 = torch.exp(a_1_23_hat) / (torch.exp(a_2_13_hat) + torch.exp(a_3_12_hat))
+        # a_2_13 = torch.exp(a_2_13_hat) / (torch.exp(a_1_23_hat) + torch.exp(a_3_12_hat))
+        # a_3_12 = torch.exp(a_3_12_hat) / (torch.exp(a_1_23_hat) + torch.exp(a_2_13_hat))
+        a_1_23 = a_1_23_hat / (a_2_13_hat + a_3_12_hat)
+        a_2_13 = a_2_13_hat / (a_1_23_hat + a_3_12_hat)
+        a_3_12 = a_3_12_hat / (a_1_23_hat + a_2_13_hat)
 
         return V_1_23, V_2_13, V_3_12, a_1_23, a_2_13, a_3_12
 
