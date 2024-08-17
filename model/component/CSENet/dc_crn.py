@@ -6,9 +6,9 @@ import sys
 
 # from show import show_params, show_model
 import torch.nn.functional as F
-from conv_stft import ConvSTFT, ConviSTFT
+from model.component.CSENet.conv_stft import ConvSTFT, ConviSTFT
 
-from complexnn import (
+from model.component.CSENet.complexnn import (
     ComplexConv2d,
     ComplexConvTranspose2d,
     NavieComplexLSTM,

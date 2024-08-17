@@ -3,6 +3,9 @@ import torch.nn as nn
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from os.path import join
+import torchaudio
+import os
+from sklearn.model_selection import train_test_split
 
 DATASET_RAW_DIR = "/public1/cjh/workspace/DepressionPrediction/dataset/EATD-Corpus"
 TRAIN_DATASET_DIR = join(DATASET_RAW_DIR, "train")
@@ -160,6 +163,45 @@ def get_tri_modal_dataloader(batch_size: int = 32):
     return tri_modal_dataloader_train, tri_modal_dataloader_test
 
 
+def get_waveform_ndarary():
+    DATASET_RAW_DIR = "/public1/cjh/workspace/DepressionPrediction/dataset/EATD-Corpus"
+    TRAIN_DATASET_DIR = join(DATASET_RAW_DIR, "train")
+    VAL_DATASET_DIR = join(DATASET_RAW_DIR, "validation")
+    dir_list = os.listdir(TRAIN_DATASET_DIR)
+    dir_list = sorted(dir_list, key=int)
+    waveform_list = []
+    label_list = (
+        np.load(
+            "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/train/labels.npz"
+        )["arr_0"]
+        / 100
+    )
+
+    for dir in dir_list:
+        SAMPLE_DIR = join(TRAIN_DATASET_DIR, dir)
+        with open(join(SAMPLE_DIR, "new_label.txt")) as label_file:
+            label = label_file.read()
+        waveform_1, _ = torchaudio.load(join(SAMPLE_DIR, "negative_out.wav"))
+        waveform_2, _ = torchaudio.load(join(SAMPLE_DIR, "neutral_out.wav"))
+        waveform_3, _ = torchaudio.load(join(SAMPLE_DIR, "positive_out.wav"))
+        if waveform_1.shape[0] > 1:
+            waveform_1 = waveform_1[0]
+        if waveform_2.shape[0] > 1:
+            waveform_2 = waveform_2[0]
+        if waveform_3.shape[0] > 1:
+            waveform_3 = waveform_3[0]
+
+        # label_list += [label] * 3
+        waveform_list += [waveform_1.numpy(), waveform_2.numpy(), waveform_3.numpy()]
+    # break
+
+    # get train_datset and test_dataset
+    X_train, X_test, y_train, y_test = train_test_split(
+        waveform_list, label_list, test_size=0.2, random_state=42
+    )
+    return X_train, y_train, X_test, y_test
+
+
 if __name__ == "__main__":
     # (
     #     waveform_tf_train_dataloader,
@@ -174,16 +216,21 @@ if __name__ == "__main__":
     # print(train_data.shape)
     # print(train_label.shape)
 
-    dataset = TriModalDataset()
-    e, t, w, l = dataset[0]
-    print(e.shape)
-    print(t.shape)
-    print(w.shape)
-    print(l.shape)
+    # dataset = TriModalDataset()
+    # e, t, w, l = dataset[0]
+    # print(e.shape)
+    # print(t.shape)
+    # print(w.shape)
+    # print(l.shape)
 
-    train_input, train_label = get_tri_modal_dataloader()
-    e, t, w, l = next(iter(train_input))
-    print(e.shape)
-    print(t.shape)
-    print(w.shape)
-    print(l.shape)
+    # train_input, train_label = get_tri_modal_dataloader()
+    # e, t, w, l = next(iter(train_input))
+    # print(e.shape)
+    # print(t.shape)
+    # print(w.shape)
+    # print(l.shape)
+
+    waveform_list_train, label_list_train, waveform_list_test, label_list_test = (
+        get_waveform_ndarary()
+    )
+    print(len(waveform_list_train))
