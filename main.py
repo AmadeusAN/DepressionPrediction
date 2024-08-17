@@ -237,6 +237,7 @@ def train_CSENet(
     save_model_name: str = None,
     visualize_train_dir: str = None,
     visualize_test_dir: str = None,
+    start_lr: float = 1e-4,
 ):
     """
     主要训练逻辑
@@ -259,7 +260,7 @@ def train_CSENet(
         kernel_num=[32, 64, 128, 256, 256, 256],
     )
     mse_loss_fn = torch.nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=START_LEARNING_RATE)
+    optimizer = torch.optim.Adam(model.parameters(), lr=start_lr)
     scheduler = MultiStepLR(optimizer=optimizer, milestones=LR_MILESTONES, gamma=0.5)
 
     # loading parameters
@@ -391,7 +392,7 @@ def train_CSENet(
             np.savez(
                 os.path.join(
                     visualize_test_dir,
-                    f"test_" + SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
+                    SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
                 ),
                 data=TEST_MSE_Loss,
             )
@@ -407,7 +408,7 @@ def train_CSENet(
             np.savez(
                 os.path.join(
                     visualize_test_dir,
-                    f"test_" + SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
+                    SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
                 ),
                 data=TEST_R2_Score,
             )
@@ -423,7 +424,7 @@ def train_CSENet(
             np.savez(
                 os.path.join(
                     visualize_test_dir,
-                    f"test_" + SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
+                    SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
                 ),
                 data=TEST_RMSE_Loss,
             )
@@ -451,11 +452,12 @@ if __name__ == "__main__":
     # print(VISUALIZE_TRAIN_DIR)
 
     train_CSENet(
-        load_epoch=20,
-        end_epoch=100,
+        load_epoch=100,
+        end_epoch=300,
         save_interval=20,
         checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/CSENet",
         save_model_name="CSENet",
         visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/CSENet",
         visualize_test_dir="/public1/cjh/workspace/DepressionPrediction/visualize/test/CSENet",
+        start_lr=1e-6,
     )

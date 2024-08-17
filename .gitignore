@@ -7,4 +7,5 @@
 /model/component/emotion_path/model
 /dataset/raw_ndarray
 /checkpoint
-/visualize
+/visualize/train
+/visualize/test
