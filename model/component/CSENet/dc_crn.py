@@ -60,6 +60,9 @@ class SelfAttention(nn.Module):
                 noise = noise.to(inputs.device)
             avg_repr, std_repr = weighted.sum(1), (weighted + noise).std(1)
 
+            # std_repr 的第二个纬度有可能是1，此时 std() 方法返回 nan，需要参考 np.std() 方法返回 0
+            if torch.isnan(std_repr).any():
+                std_repr = torch.zeros_like(std_repr)
             representations = torch.cat((avg_repr, std_repr), 1)
 
             return representations

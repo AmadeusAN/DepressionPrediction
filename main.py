@@ -441,8 +441,9 @@ if __name__ == "__main__":
     #     else "mps" if torch.backends.mps.is_available() else "cpu"
     # )
 
-    # torch.set_anomaly_enabled(True)
-    # torch.set_deterministic_debug_mode(True)
+    # 启用异常检测模式
+    # torch.autograd.set_detect_anomaly(True)
+    # torch.use_deterministic_algorithms(True)
 
     print(f"{device} detected")
 
@@ -452,12 +453,12 @@ if __name__ == "__main__":
     # print(VISUALIZE_TRAIN_DIR)
 
     train_CSENet(
-        load_epoch=100,
-        end_epoch=300,
+        load_epoch=0,
+        end_epoch=100,
         save_interval=20,
         checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/CSENet",
         save_model_name="CSENet",
         visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/CSENet",
         visualize_test_dir="/public1/cjh/workspace/DepressionPrediction/visualize/test/CSENet",
-        start_lr=1e-6,
+        start_lr=1e-3,
     )
