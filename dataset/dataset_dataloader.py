@@ -163,11 +163,15 @@ def get_tri_modal_dataloader(batch_size: int = 32):
     return tri_modal_dataloader_train, tri_modal_dataloader_test
 
 
-def get_waveform_ndarary():
+def get_waveform_ndarary(train: bool = True):
     DATASET_RAW_DIR = "/public1/cjh/workspace/DepressionPrediction/dataset/EATD-Corpus"
     TRAIN_DATASET_DIR = join(DATASET_RAW_DIR, "train")
     VAL_DATASET_DIR = join(DATASET_RAW_DIR, "validation")
-    dir_list = os.listdir(TRAIN_DATASET_DIR)
+    if train:
+        dir_list = os.listdir(TRAIN_DATASET_DIR)
+    else:
+        dir_list = os.listdir(VAL_DATASET_DIR)
+
     dir_list = sorted(dir_list, key=int)
     waveform_list = []
     label_list = (
@@ -175,10 +179,17 @@ def get_waveform_ndarary():
             "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/train/labels.npz"
         )["arr_0"]
         / 100
+        if train
+        else np.load(
+            "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/test/labels.npz"
+        )["arr_0"]
+        / 100
     )
 
     for dir in dir_list:
-        SAMPLE_DIR = join(TRAIN_DATASET_DIR, dir)
+        SAMPLE_DIR = (
+            join(TRAIN_DATASET_DIR, dir) if train else join(VAL_DATASET_DIR, dir)
+        )
         with open(join(SAMPLE_DIR, "new_label.txt")) as label_file:
             label = label_file.read()
         waveform_1, _ = torchaudio.load(join(SAMPLE_DIR, "negative_out.wav"))
@@ -196,10 +207,14 @@ def get_waveform_ndarary():
     # break
 
     # get train_datset and test_dataset
-    X_train, X_test, y_train, y_test = train_test_split(
-        waveform_list, label_list, test_size=0.2, random_state=42
-    )
-    return X_train, y_train, X_test, y_test
+    if train:
+        X_train, X_test, y_train, y_test = train_test_split(
+            waveform_list, label_list, test_size=0.2, random_state=42
+        )
+        return X_train, y_train, X_test, y_test
+
+    else:
+        return waveform_list, label_list
 
 
 if __name__ == "__main__":
@@ -230,7 +245,10 @@ if __name__ == "__main__":
     # print(w.shape)
     # print(l.shape)
 
-    waveform_list_train, label_list_train, waveform_list_test, label_list_test = (
-        get_waveform_ndarary()
-    )
-    print(len(waveform_list_train))
+    # waveform_list_train, label_list_train, waveform_list_test, label_list_test = (
+    #     get_waveform_ndarary()
+    # )
+    # print(len(waveform_list_train))
+
+    waveform_list_test, label_list_test = get_waveform_ndarary(train=False)
+    print(len(waveform_list_test))

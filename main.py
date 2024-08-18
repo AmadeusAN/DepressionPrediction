@@ -20,7 +20,7 @@ save_model_name = "model_v1"  # 模型权重文件名称
 SAVE_LOSS_NAME = ["mse_loss", "r2_score", "rmse_loss"]  # 用到的损失名称
 BATCH_SIZE = 16
 START_LEARNING_RATE = 1e-4
-LR_MILESTONES = [50, 100, 150, 200, 250, 300, 400]
+LR_MILESTONES = [20, 40, 60, 80, 100, 200, 400]
 
 device = (
     "cuda:1"
@@ -434,6 +434,50 @@ def train_CSENet(
             print(f"save cancel, discard data")
 
 
+def test_CSENet(
+    load_epoch: int = 0,
+    checkpint_dir: str = None,
+    save_model_name: str = None,
+):
+
+    print(f"use {device}")
+    waveform_list_test, label_list_test = get_waveform_ndarary(train=False)
+    dataset_len = len(waveform_list_test)
+    # loading model
+    model = DCCRN(
+        rnn_units=256,
+        use_clstm=True,
+        kernel_num=[32, 64, 128, 256, 256, 256],
+    )
+    mse_loss_fn = torch.nn.MSELoss()
+    (
+        test_mse_loss,
+        test_rmse_loss,
+    ) = (0.0, 0.0)
+    model.load_state_dict(
+        torch.load(os.path.join(checkpint_dir, save_model_name + f"_{load_epoch}"))
+    )
+    print(f"parameters loaded")
+    model.to(device)
+    model.eval()
+    with torch.no_grad():
+        for x, y in zip(waveform_list_test, label_list_test):
+            x, y = torch.unsqueeze(torch.tensor(x).to(device), dim=0), torch.unsqueeze(
+                torch.tensor(y).to(device), dim=0
+            )
+
+            y_hat = model(x)
+            mse_loss = mse_loss_fn(y_hat, y)
+            rmse_loss = torch.sqrt(mse_loss)
+            test_mse_loss += mse_loss.item()
+            test_rmse_loss += rmse_loss.item()
+        test_mse_loss /= dataset_len
+        test_rmse_loss /= dataset_len
+        print(
+            f"test  mse_loss = {test_mse_loss:>12f}, rmse_loss = {test_rmse_loss:>12f}"
+        )
+
+
 if __name__ == "__main__":
     # device = (
     #     "cuda"
@@ -452,13 +496,19 @@ if __name__ == "__main__":
 
     # print(VISUALIZE_TRAIN_DIR)
 
-    train_CSENet(
-        load_epoch=0,
-        end_epoch=100,
-        save_interval=20,
+    # train_CSENet(
+    #     load_epoch=40,
+    #     end_epoch=41,
+    #     save_interval=20,
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/CSENet",
+    #     save_model_name="CSENet",
+    #     visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/CSENet",
+    #     visualize_test_dir="/public1/cjh/workspace/DepressionPrediction/visualize/test/CSENet",
+    #     start_lr=1e-5,
+    # )
+
+    test_CSENet(
+        load_epoch=20,
         checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/CSENet",
         save_model_name="CSENet",
-        visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/CSENet",
-        visualize_test_dir="/public1/cjh/workspace/DepressionPrediction/visualize/test/CSENet",
-        start_lr=1e-3,
     )
