@@ -9,3 +9,5 @@
 /checkpoint
 /visualize/train
 /visualize/test
+/visualize/val
+

@@ -15,12 +15,12 @@ SOR_DIR = os.path.dirname(__file__)
 checkpint_dir = os.path.join(SOR_DIR, "checkpoint")  # 模型权重保存目录
 VISUALIZE_DIR = os.path.join(SOR_DIR, "visualize")  # 损失数据保存目录
 visualize_train_dir = os.path.join(VISUALIZE_DIR, "train")
-visualize_test_dir = os.path.join(VISUALIZE_DIR, "test")
+visualize_val_dir = os.path.join(VISUALIZE_DIR, "val")
 save_model_name = "model_v1"  # 模型权重文件名称
 SAVE_LOSS_NAME = ["mse_loss", "r2_score", "rmse_loss"]  # 用到的损失名称
 BATCH_SIZE = 16
 START_LEARNING_RATE = 1e-4
-LR_MILESTONES = [20, 40, 60, 80, 100, 200, 400]
+LR_MILESTONES = [10, 20, 30, 50, 80, 100, 200]
 
 device = (
     "cuda:1"
@@ -71,9 +71,9 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
     MSE_Loss = []
     R2_Score = []
     RMSE_Loss = []
-    TEST_MSE_Loss = []
-    TEST_R2_Score = []
-    TEST_RMSE_Loss = []
+    VAL_MSE_Loss = []
+    VAL_R2_Score = []
+    VAL_RMSE_Loss = []
     cur_epoch = 0
 
     try:
@@ -128,9 +128,9 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
             model.eval()
             num_batches = len(test_dataloader)
             (
-                test_mse_loss,
-                test_r2_score,
-                test_rmse_loss,
+                val_mse_loss,
+                val_r2_score,
+                val_rmse_loss,
             ) = (0.0, 0.0, 0.0)
             with torch.no_grad():
                 for e, t, w, y in test_dataloader:
@@ -141,17 +141,17 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
                     r2_score = r2_loss_fn(y_hat, y)
                     rmse_loss = torch.sqrt(mse_loss)
 
-                    test_mse_loss += mse_loss.item()
-                    test_r2_score += r2_score.item()
-                    test_rmse_loss += rmse_loss.item()
-            test_mse_loss /= num_batches
-            test_r2_score /= num_batches
-            test_rmse_loss /= num_batches
-            TEST_MSE_Loss.append(test_mse_loss)
-            TEST_R2_Score.append(test_r2_score)
-            TEST_RMSE_Loss.append(test_rmse_loss)
+                    val_mse_loss += mse_loss.item()
+                    val_r2_score += r2_score.item()
+                    val_rmse_loss += rmse_loss.item()
+            val_mse_loss /= num_batches
+            val_r2_score /= num_batches
+            val_rmse_loss /= num_batches
+            VAL_MSE_Loss.append(val_mse_loss)
+            VAL_R2_Score.append(val_r2_score)
+            VAL_RMSE_Loss.append(val_rmse_loss)
             print(
-                f"test  mse_loss = {test_mse_loss:>12f}, rmse_loss = {test_rmse_loss:>12f}, r2 = {test_r2_score:>12f}"
+                f"val  mse_loss = {val_mse_loss:>12f}, rmse_loss = {val_rmse_loss:>12f}, r2 = {val_r2_score:>12f}"
             )
             model.train()
 
@@ -173,8 +173,8 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
             # 创建对应的损失文件夹
             if not os.path.exists(visualize_train_dir):
                 os.mkdir(visualize_train_dir)
-            if not os.path.exists(visualize_test_dir):
-                os.mkdir(visualize_test_dir)
+            if not os.path.exists(visualize_val_dir):
+                os.mkdir(visualize_val_dir)
 
             np.savez(
                 os.path.join(
@@ -186,10 +186,10 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
 
             np.savez(
                 os.path.join(
-                    visualize_test_dir,
+                    visualize_val_dir,
                     f"test_" + SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
                 ),
-                data=TEST_MSE_Loss,
+                data=VAL_MSE_Loss,
             )
 
             np.savez(
@@ -202,10 +202,10 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
 
             np.savez(
                 os.path.join(
-                    visualize_test_dir,
+                    visualize_val_dir,
                     f"test_" + SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
                 ),
-                data=TEST_R2_Score,
+                data=VAL_R2_Score,
             )
 
             np.savez(
@@ -218,10 +218,10 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
 
             np.savez(
                 os.path.join(
-                    visualize_test_dir,
+                    visualize_val_dir,
                     f"test_" + SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
                 ),
-                data=TEST_RMSE_Loss,
+                data=VAL_RMSE_Loss,
             )
 
             print(f"save success")
@@ -236,7 +236,7 @@ def train_CSENet(
     checkpint_dir: str = None,
     save_model_name: str = None,
     visualize_train_dir: str = None,
-    visualize_test_dir: str = None,
+    visualize_val_dir: str = None,
     start_lr: float = 1e-4,
 ):
     """
@@ -249,7 +249,7 @@ def train_CSENet(
     """
     print(f"use {device}")
 
-    waveform_list_train, label_list_train, waveform_list_test, label_list_test = (
+    waveform_list_train, label_list_train, waveform_list_val, label_list_val = (
         get_waveform_ndarary()
     )
 
@@ -261,7 +261,7 @@ def train_CSENet(
     )
     mse_loss_fn = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=start_lr)
-    scheduler = MultiStepLR(optimizer=optimizer, milestones=LR_MILESTONES, gamma=0.5)
+    scheduler = MultiStepLR(optimizer=optimizer, milestones=LR_MILESTONES, gamma=0.1)
 
     # loading parameters
     if load_epoch != 0:
@@ -273,11 +273,9 @@ def train_CSENet(
     model.to(device)
     model.train()
     MSE_Loss = []
-    R2_Score = []
     RMSE_Loss = []
-    TEST_MSE_Loss = []
-    TEST_R2_Score = []
-    TEST_RMSE_Loss = []
+    VAL_MSE_Loss = []
+    VAL_RMSE_Loss = []
     cur_epoch = 0
 
     try:
@@ -295,7 +293,6 @@ def train_CSENet(
                 y_hat = model(x)
 
                 mse_loss = mse_loss_fn(y_hat, y)
-                r2_score = r2_loss_fn(y_hat, y)
                 rmse_loss = torch.sqrt(mse_loss)
 
                 mse_loss.backward()
@@ -303,60 +300,49 @@ def train_CSENet(
                 optimizer.zero_grad()
 
                 # record loss
-                current, mse_loss, r2_score, rmse_loss = (
+                current, mse_loss, rmse_loss = (
                     index + 1,
                     mse_loss.item(),
-                    r2_score.item(),
                     rmse_loss.item(),
                 )
                 epoch_loss += mse_loss
-                epoch_r2 += r2_score
                 epoch_rmse += rmse_loss
                 print(
-                    f"mse_loss = {mse_loss:>6f},rmse_loss = {rmse_loss:>6f}, r2_score = {r2_score:>6f},---[{current:>5d}/{size:>5d}]"
+                    f"mse_loss = {mse_loss:>6f},rmse_loss = {rmse_loss:>6f} ---[{current:>5d}/{size:>5d}]"
                 )
 
             epoch_loss /= len(waveform_list_train)
-            epoch_r2 /= len(waveform_list_train)
             epoch_rmse /= len(waveform_list_train)
             MSE_Loss.append(epoch_loss)
-            R2_Score.append(epoch_r2)
             RMSE_Loss.append(epoch_rmse)
-            print(
-                f"train mse_lost = {epoch_loss:>12f}, rmse_loss = {epoch_rmse:>12f}, r2 = {epoch_r2:>12f}"
-            )
+            print(f"train mse_lost = {epoch_loss:>12f}, rmse_loss = {epoch_rmse:>12f}")
             scheduler.step()
             # ===============================================================================================================================
-            # testing logic
+            # validation logic
             model.eval()
-            num_batches = len(waveform_list_test)
+            num_batches = len(waveform_list_val)
             (
-                test_mse_loss,
-                test_r2_score,
-                test_rmse_loss,
-            ) = (0.0, 0.0, 0.0)
+                val_mse_loss,
+                val_rmse_loss,
+            ) = (0.0, 0.0)
             with torch.no_grad():
-                for x, y in zip(waveform_list_test, label_list_test):
+                for x, y in zip(waveform_list_val, label_list_val):
                     x, y = torch.unsqueeze(
                         torch.tensor(x).to(device), dim=0
                     ), torch.unsqueeze(torch.tensor(y).to(device), dim=0)
 
                     y_hat = model(y)
                     mse_loss = mse_loss_fn(y_hat, y)
-                    r2_score = r2_loss_fn(y_hat, y)
                     rmse_loss = torch.sqrt(mse_loss)
 
-                    test_mse_loss += mse_loss.item()
-                    test_r2_score += r2_score.item()
-                    test_rmse_loss += rmse_loss.item()
-            test_mse_loss /= num_batches
-            test_r2_score /= num_batches
-            test_rmse_loss /= num_batches
-            TEST_MSE_Loss.append(test_mse_loss)
-            TEST_R2_Score.append(test_r2_score)
-            TEST_RMSE_Loss.append(test_rmse_loss)
+                    val_mse_loss += mse_loss.item()
+                    val_rmse_loss += rmse_loss.item()
+            val_mse_loss /= num_batches
+            val_rmse_loss /= num_batches
+            VAL_MSE_Loss.append(val_mse_loss)
+            VAL_RMSE_Loss.append(val_rmse_loss)
             print(
-                f"test  mse_loss = {test_mse_loss:>12f}, rmse_loss = {test_rmse_loss:>12f}, r2 = {test_r2_score:>12f}"
+                f"val  mse_loss = {val_mse_loss:>12f}, rmse_loss = {val_rmse_loss:>12f}"
             )
             model.train()
 
@@ -378,8 +364,8 @@ def train_CSENet(
             # 创建对应的损失文件夹
             if not os.path.exists(visualize_train_dir):
                 os.mkdir(visualize_train_dir)
-            if not os.path.exists(visualize_test_dir):
-                os.mkdir(visualize_test_dir)
+            if not os.path.exists(visualize_val_dir):
+                os.mkdir(visualize_val_dir)
 
             np.savez(
                 os.path.join(
@@ -391,26 +377,10 @@ def train_CSENet(
 
             np.savez(
                 os.path.join(
-                    visualize_test_dir,
+                    visualize_val_dir,
                     SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
                 ),
-                data=TEST_MSE_Loss,
-            )
-
-            np.savez(
-                os.path.join(
-                    visualize_train_dir,
-                    SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=R2_Score,
-            )
-
-            np.savez(
-                os.path.join(
-                    visualize_test_dir,
-                    SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=TEST_R2_Score,
+                data=VAL_MSE_Loss,
             )
 
             np.savez(
@@ -423,10 +393,10 @@ def train_CSENet(
 
             np.savez(
                 os.path.join(
-                    visualize_test_dir,
+                    visualize_val_dir,
                     SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
                 ),
-                data=TEST_RMSE_Loss,
+                data=VAL_RMSE_Loss,
             )
 
             print(f"save success")
@@ -496,19 +466,19 @@ if __name__ == "__main__":
 
     # print(VISUALIZE_TRAIN_DIR)
 
-    # train_CSENet(
-    #     load_epoch=40,
-    #     end_epoch=41,
-    #     save_interval=20,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/CSENet",
-    #     save_model_name="CSENet",
-    #     visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/CSENet",
-    #     visualize_test_dir="/public1/cjh/workspace/DepressionPrediction/visualize/test/CSENet",
-    #     start_lr=1e-5,
-    # )
-
-    test_CSENet(
-        load_epoch=20,
+    train_CSENet(
+        load_epoch=0,
+        end_epoch=100,
+        save_interval=20,
         checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/CSENet",
         save_model_name="CSENet",
+        visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/CSENet",
+        visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/CSENet",
+        start_lr=1e-3,
     )
+
+    # test_CSENet(
+    #     load_epoch=20,
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/CSENet",
+    #     save_model_name="CSENet",
+    # )

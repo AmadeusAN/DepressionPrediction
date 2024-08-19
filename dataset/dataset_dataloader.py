@@ -190,8 +190,6 @@ def get_waveform_ndarary(train: bool = True):
         SAMPLE_DIR = (
             join(TRAIN_DATASET_DIR, dir) if train else join(VAL_DATASET_DIR, dir)
         )
-        with open(join(SAMPLE_DIR, "new_label.txt")) as label_file:
-            label = label_file.read()
         waveform_1, _ = torchaudio.load(join(SAMPLE_DIR, "negative_out.wav"))
         waveform_2, _ = torchaudio.load(join(SAMPLE_DIR, "neutral_out.wav"))
         waveform_3, _ = torchaudio.load(join(SAMPLE_DIR, "positive_out.wav"))
