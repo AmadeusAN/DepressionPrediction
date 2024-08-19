@@ -1,3 +1,7 @@
+"""
+主要的数据集加载模块
+"""
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -213,6 +217,15 @@ def get_waveform_ndarary(train: bool = True):
 
     else:
         return waveform_list, label_list
+
+
+def waveform_sample():
+    """仅生成一个 waveform 音频数据，供单个网络进行测试用"""
+    audio_path = r"/public1/cjh/workspace/DepressionPrediction/dataset/EATD-Corpus/train/1/positive_out.wav"
+    wavefrom, _ = torchaudio.load(audio_path)
+    if wavefrom.shape[0] > 1:
+        wavefrom = wavefrom[0]
+    return torch.unsqueeze(wavefrom, dim=0)
 
 
 if __name__ == "__main__":

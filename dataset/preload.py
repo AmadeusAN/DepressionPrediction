@@ -1,3 +1,8 @@
+"""
+用于直接将 waveform 输入 Wav2Vec 并得到情感向量输出，
+并将其保存为 waveform_hiddenvector_raw.npz
+"""
+
 import torch
 import torch.nn as nn
 import torchaudio

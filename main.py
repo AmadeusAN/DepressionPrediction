@@ -1,12 +1,14 @@
 import os
 import numpy as np
 import torch
+import torch.nn as nn
 from dataset import dataset_dataloader
 from dataset.dataset_dataloader import get_waveform_ndarary
 from model.model import Model
 from model.component.output_module.linear_output import LinearOutput
 from torch.optim.lr_scheduler import MultiStepLR
 from model.component.CSENet.dc_crn import DCCRN
+from model.component.emotion_path.Wav2vec import Wav2VecModel
 
 import sys
 
@@ -229,7 +231,8 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
             print(f"save cancel, discard data")
 
 
-def train_CSENet(
+def train_single_modal(
+    model: torch.nn.Module = None,
     load_epoch: int = 0,
     end_epoch: int = 100,
     save_interval: int = 10,
@@ -253,12 +256,6 @@ def train_CSENet(
         get_waveform_ndarary()
     )
 
-    # loading model
-    model = DCCRN(
-        rnn_units=256,
-        use_clstm=True,
-        kernel_num=[32, 64, 128, 256, 256, 256],
-    )
     mse_loss_fn = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=start_lr)
     scheduler = MultiStepLR(optimizer=optimizer, milestones=LR_MILESTONES, gamma=0.1)
@@ -284,7 +281,6 @@ def train_CSENet(
         for eph in range(load_epoch + 1, end_epoch + 1):
             print(f"epoch:{eph} ", "*" * 100)
             epoch_loss = 0.0
-            epoch_r2 = 0.0
             epoch_rmse = 0.0
             for index, (x, y) in enumerate(zip(waveform_list_train, label_list_train)):
                 x, y = torch.unsqueeze(
@@ -331,7 +327,7 @@ def train_CSENet(
                         torch.tensor(x).to(device), dim=0
                     ), torch.unsqueeze(torch.tensor(y).to(device), dim=0)
 
-                    y_hat = model(y)
+                    y_hat = model(x)
                     mse_loss = mse_loss_fn(y_hat, y)
                     rmse_loss = torch.sqrt(mse_loss)
 
@@ -404,7 +400,8 @@ def train_CSENet(
             print(f"save cancel, discard data")
 
 
-def test_CSENet(
+def test_single_modal(
+    model: nn.Module = None,
     load_epoch: int = 0,
     checkpint_dir: str = None,
     save_model_name: str = None,
@@ -413,12 +410,6 @@ def test_CSENet(
     print(f"use {device}")
     waveform_list_test, label_list_test = get_waveform_ndarary(train=False)
     dataset_len = len(waveform_list_test)
-    # loading model
-    model = DCCRN(
-        rnn_units=256,
-        use_clstm=True,
-        kernel_num=[32, 64, 128, 256, 256, 256],
-    )
     mse_loss_fn = torch.nn.MSELoss()
     (
         test_mse_loss,
@@ -432,9 +423,11 @@ def test_CSENet(
     model.eval()
     with torch.no_grad():
         for x, y in zip(waveform_list_test, label_list_test):
-            x, y = torch.unsqueeze(torch.tensor(x).to(device), dim=0), torch.unsqueeze(
-                torch.tensor(y).to(device), dim=0
-            )
+            x, y = (
+                torch.unsqueeze(torch.tensor(x).to(device), dim=0)
+                if len(waveform_list_test[0].shape) == 1
+                else torch.tensor(x).to(device)
+            ), torch.unsqueeze(torch.tensor(y).to(device), dim=0)
 
             y_hat = model(x)
             mse_loss = mse_loss_fn(y_hat, y)
@@ -466,19 +459,31 @@ if __name__ == "__main__":
 
     # print(VISUALIZE_TRAIN_DIR)
 
-    train_CSENet(
-        load_epoch=0,
-        end_epoch=100,
-        save_interval=20,
-        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/CSENet",
-        save_model_name="CSENet",
-        visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/CSENet",
-        visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/CSENet",
-        start_lr=1e-3,
-    )
-
-    # test_CSENet(
-    #     load_epoch=20,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/CSENet",
-    #     save_model_name="CSENet",
+    # load DCCRN
+    # model = DCCRN(
+    #     rnn_units=256,
+    #     use_clstm=True,
+    #     kernel_num=[32, 64, 128, 256, 256, 256],
     # )
+
+    # load Wav2Vec
+    model = Wav2VecModel()
+
+    # train_CSENet(
+    #     model=model,
+    #     load_epoch=0,
+    #     end_epoch=100,
+    #     save_interval=20,
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec",
+    #     save_model_name="Wav2Vec",
+    #     visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/Wav2Vec",
+    #     visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/Wav2Vec",
+    #     start_lr=1e-3,
+    # )
+
+    test_single_modal(
+        model=model,
+        load_epoch=20,
+        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec",
+        save_model_name="Wav2Vec",
+    )
