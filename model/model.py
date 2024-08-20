@@ -19,8 +19,8 @@ from os.path import join
 import sys
 
 # 子级模块中导出同级别子集模块的暂时性解决方法
-sys.path.append("/public1/cjh/workspace/DepressionPrediction/dataset")
-from dataset_dataloader import get_tri_modal_dataloader
+sys.path.append("/public1/cjh/workspace/DepressionPrediction")
+from dataset.dataset_dataloader import get_tri_modal_dataloader
 
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 

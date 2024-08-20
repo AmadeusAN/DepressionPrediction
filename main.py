@@ -10,6 +10,7 @@ from torch.optim.lr_scheduler import MultiStepLR
 from model.component.CSENet.dc_crn import DCCRN
 from model.component.emotion_path.Wav2vec import Wav2VecModel
 from model.component.text_path.SentenceModel import SentenceTransformerModel
+from sklearn.metrics import precision_score, recall_score, f1_score
 
 import sys
 
@@ -431,6 +432,9 @@ def test_single_modal(
         test_mse_loss,
         test_rmse_loss,
     ) = (0.0, 0.0)
+    predict = []
+    groundtruth = []
+
     model.load_state_dict(
         torch.load(os.path.join(checkpint_dir, save_model_name + f"_{load_epoch}"))
     )
@@ -439,11 +443,16 @@ def test_single_modal(
     model.eval()
     with torch.no_grad():
         for x, y in zip(data_list_test, label_list_test):
+
+            groundtruth.append(1 if y >= 0.53 else 0)
+
             x, y = (x if text_path else torch.tensor(x).to(device)), torch.unsqueeze(
                 torch.tensor(y).to(device), dim=0
             )
 
             y_hat = torch.unsqueeze(model(x), dim=0)
+
+            predict.append(1 if y_hat.item() >= 0.53 else 0)
             mse_loss = mse_loss_fn(y_hat, y)
             rmse_loss = torch.sqrt(mse_loss)
             test_mse_loss += mse_loss.item()
@@ -453,6 +462,32 @@ def test_single_modal(
         print(
             f"test  mse_loss = {test_mse_loss:>12f}, rmse_loss = {test_rmse_loss:>12f}"
         )
+
+    # 进行分类计算
+    y_pred = np.array(predict)
+    y_true = np.array(groundtruth)
+
+    # true positive
+    TP = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 1)))
+    print(f"TP = {TP}")
+
+    # false positive
+    FP = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 1)))
+    print(f"FP = {FP}")
+
+    # true negative
+    TN = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 0)))
+    print(f"TN = {TN}")
+
+    # false negative
+    FN = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 0)))
+    print(f"FN = {FN}")
+
+    p = precision_score(y_true, y_pred, average="binary")
+    r = recall_score(y_true, y_pred, average="binary")
+    f1score = f1_score(y_true, y_pred, average="binary")
+
+    print(f"precision = {p}, recall = {r}, f1score = {f1score}")
 
 
 if __name__ == "__main__":
@@ -474,17 +509,17 @@ if __name__ == "__main__":
     # print(VISUALIZE_TRAIN_DIR)
 
     # load DCCRN
-    # model = DCCRN(
-    #     rnn_units=256,
-    #     use_clstm=True,
-    #     kernel_num=[32, 64, 128, 256, 256, 256],
-    # )
+    model = DCCRN(
+        rnn_units=256,
+        use_clstm=True,
+        kernel_num=[32, 64, 128, 256, 256, 256],
+    )
 
     # load Wav2Vec
     # model = Wav2VecModel()
 
     # load SentenceTransformer
-    model = SentenceTransformerModel(device=device)
+    # model = SentenceTransformerModel(device=device)
 
     # train_single_modal(
     #     model=model,
@@ -501,8 +536,8 @@ if __name__ == "__main__":
 
     test_single_modal(
         model=model,
-        text_path=True,
+        # text_path=True,
         load_epoch=20,
-        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/SentenceTransformer",
-        save_model_name="SentenceTransformer",
+        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/CSENet",
+        save_model_name="CSENet",
     )
