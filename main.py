@@ -3,12 +3,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 from dataset import dataset_dataloader
-from dataset.dataset_dataloader import get_waveform_ndarary
+from dataset.dataset_dataloader import get_waveform_ndarary, get_text_ndarray
 from model.model import Model
 from model.component.output_module.linear_output import LinearOutput
 from torch.optim.lr_scheduler import MultiStepLR
 from model.component.CSENet.dc_crn import DCCRN
 from model.component.emotion_path.Wav2vec import Wav2VecModel
+from model.component.text_path.SentenceModel import SentenceTransformerModel
 
 import sys
 
@@ -233,6 +234,7 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
 
 def train_single_modal(
     model: torch.nn.Module = None,
+    text_path: bool = False,
     load_epoch: int = 0,
     end_epoch: int = 100,
     save_interval: int = 10,
@@ -252,9 +254,14 @@ def train_single_modal(
     """
     print(f"use {device}")
 
-    waveform_list_train, label_list_train, waveform_list_val, label_list_val = (
-        get_waveform_ndarary()
-    )
+    if text_path:
+        data_list_train, label_list_train, data_list_val, label_list_val = (
+            get_text_ndarray()
+        )
+    else:
+        data_list_train, label_list_train, data_list_val, label_list_val = (
+            get_waveform_ndarary()
+        )
 
     mse_loss_fn = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=start_lr)
@@ -277,16 +284,18 @@ def train_single_modal(
 
     try:
         # main training logic
-        size = len(waveform_list_train)
+        size = len(data_list_train)
         for eph in range(load_epoch + 1, end_epoch + 1):
             print(f"epoch:{eph} ", "*" * 100)
-            epoch_loss = 0.0
+            epoch_mse = 0.0
             epoch_rmse = 0.0
-            for index, (x, y) in enumerate(zip(waveform_list_train, label_list_train)):
-                x, y = torch.unsqueeze(
-                    torch.tensor(x).to(device), dim=0
+            for index, (x, y) in enumerate(zip(data_list_train, label_list_train)):
+                x, y = (
+                    torch.unsqueeze(torch.tensor(x).to(device), dim=0)
+                    if not text_path
+                    else x
                 ), torch.unsqueeze(torch.tensor(y).to(device), dim=0)
-                y_hat = model(x)
+                y_hat = torch.unsqueeze(model(x), dim=0)
 
                 mse_loss = mse_loss_fn(y_hat, y)
                 rmse_loss = torch.sqrt(mse_loss)
@@ -301,30 +310,32 @@ def train_single_modal(
                     mse_loss.item(),
                     rmse_loss.item(),
                 )
-                epoch_loss += mse_loss
+                epoch_mse += mse_loss
                 epoch_rmse += rmse_loss
                 print(
                     f"mse_loss = {mse_loss:>6f},rmse_loss = {rmse_loss:>6f} ---[{current:>5d}/{size:>5d}]"
                 )
 
-            epoch_loss /= len(waveform_list_train)
-            epoch_rmse /= len(waveform_list_train)
-            MSE_Loss.append(epoch_loss)
+            epoch_mse /= len(data_list_train)
+            epoch_rmse /= len(data_list_train)
+            MSE_Loss.append(epoch_mse)
             RMSE_Loss.append(epoch_rmse)
-            print(f"train mse_lost = {epoch_loss:>12f}, rmse_loss = {epoch_rmse:>12f}")
+            print(f"train mse_lost = {epoch_mse:>12f}, rmse_loss = {epoch_rmse:>12f}")
             scheduler.step()
             # ===============================================================================================================================
             # validation logic
             model.eval()
-            num_batches = len(waveform_list_val)
+            num_batches = len(data_list_val)
             (
                 val_mse_loss,
                 val_rmse_loss,
             ) = (0.0, 0.0)
             with torch.no_grad():
-                for x, y in zip(waveform_list_val, label_list_val):
-                    x, y = torch.unsqueeze(
-                        torch.tensor(x).to(device), dim=0
+                for x, y in zip(data_list_val, label_list_val):
+                    x, y = (
+                        torch.unsqueeze(torch.tensor(x).to(device), dim=0)
+                        if not text_path
+                        else x
                     ), torch.unsqueeze(torch.tensor(y).to(device), dim=0)
 
                     y_hat = model(x)
@@ -402,14 +413,19 @@ def train_single_modal(
 
 def test_single_modal(
     model: nn.Module = None,
+    text_path: bool = False,
     load_epoch: int = 0,
     checkpint_dir: str = None,
     save_model_name: str = None,
 ):
 
     print(f"use {device}")
-    waveform_list_test, label_list_test = get_waveform_ndarary(train=False)
-    dataset_len = len(waveform_list_test)
+    data_list_test, label_list_test = (
+        get_text_ndarray(train=False)
+        if text_path
+        else get_waveform_ndarary(train=False)
+    )
+    dataset_len = len(data_list_test)
     mse_loss_fn = torch.nn.MSELoss()
     (
         test_mse_loss,
@@ -422,14 +438,12 @@ def test_single_modal(
     model.to(device)
     model.eval()
     with torch.no_grad():
-        for x, y in zip(waveform_list_test, label_list_test):
-            x, y = (
-                torch.unsqueeze(torch.tensor(x).to(device), dim=0)
-                if len(waveform_list_test[0].shape) == 1
-                else torch.tensor(x).to(device)
-            ), torch.unsqueeze(torch.tensor(y).to(device), dim=0)
+        for x, y in zip(data_list_test, label_list_test):
+            x, y = (x if text_path else torch.tensor(x).to(device)), torch.unsqueeze(
+                torch.tensor(y).to(device), dim=0
+            )
 
-            y_hat = model(x)
+            y_hat = torch.unsqueeze(model(x), dim=0)
             mse_loss = mse_loss_fn(y_hat, y)
             rmse_loss = torch.sqrt(mse_loss)
             test_mse_loss += mse_loss.item()
@@ -467,23 +481,28 @@ if __name__ == "__main__":
     # )
 
     # load Wav2Vec
-    model = Wav2VecModel()
+    # model = Wav2VecModel()
 
-    # train_CSENet(
+    # load SentenceTransformer
+    model = SentenceTransformerModel(device=device)
+
+    # train_single_modal(
     #     model=model,
+    #     text_path=True,
     #     load_epoch=0,
     #     end_epoch=100,
     #     save_interval=20,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec",
-    #     save_model_name="Wav2Vec",
-    #     visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/Wav2Vec",
-    #     visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/Wav2Vec",
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/SentenceTransformer",
+    #     save_model_name="SentenceTransformer",
+    #     visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/SentenceTransformer",
+    #     visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/SentenceTransformer",
     #     start_lr=1e-3,
     # )
 
     test_single_modal(
         model=model,
+        text_path=True,
         load_epoch=20,
-        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec",
-        save_model_name="Wav2Vec",
+        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/SentenceTransformer",
+        save_model_name="SentenceTransformer",
     )

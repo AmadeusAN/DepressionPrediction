@@ -228,6 +228,61 @@ def waveform_sample():
     return torch.unsqueeze(wavefrom, dim=0)
 
 
+def get_text_ndarray(train=True):
+    """给定 text 文本和标签数据集，以ndarray格式
+
+    Args:
+        train (bool, optional): _description_. Defaults to True.
+    """
+    DATASET_RAW_DIR = "/public1/cjh/workspace/DepressionPrediction/dataset/EATD-Corpus"
+    TRAIN_DATASET_DIR = join(DATASET_RAW_DIR, "train")
+    VAL_DATASET_DIR = join(DATASET_RAW_DIR, "validation")
+    text_list = []
+    if train:
+        dir_list = os.listdir(TRAIN_DATASET_DIR)
+    else:
+        dir_list = os.listdir(VAL_DATASET_DIR)
+
+    dir_list = sorted(dir_list, key=int)
+    label_list = (
+        np.load(
+            "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/train/labels.npz"
+        )["arr_0"]
+        / 100
+        if train
+        else np.load(
+            "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/test/labels.npz"
+        )["arr_0"]
+        / 100
+    )
+
+    for dir in dir_list:
+        SAMPLE_DIR = (
+            join(TRAIN_DATASET_DIR, dir) if train else join(VAL_DATASET_DIR, dir)
+        )
+        with open(join(SAMPLE_DIR, "negative.txt")) as text_file:
+            text_1 = text_file.read()
+            text_list.append(text_1)
+
+        with open(join(SAMPLE_DIR, "neutral.txt")) as text_file:
+            text_2 = text_file.read()
+            text_list.append(text_2)
+
+        with open(join(SAMPLE_DIR, "positive.txt")) as text_file:
+            text_3 = text_file.read()
+            text_list.append(text_3)
+
+    # get train_datset and test_dataset
+    if train:
+        X_train, X_test, y_train, y_test = train_test_split(
+            text_list, label_list, test_size=0.2, random_state=42
+        )
+        return X_train, y_train, X_test, y_test
+
+    else:
+        return text_list, label_list
+
+
 if __name__ == "__main__":
     # (
     #     waveform_tf_train_dataloader,
@@ -261,5 +316,10 @@ if __name__ == "__main__":
     # )
     # print(len(waveform_list_train))
 
-    waveform_list_test, label_list_test = get_waveform_ndarary(train=False)
-    print(len(waveform_list_test))
+    # waveform_list_test, label_list_test = get_waveform_ndarary(train=False)
+    # print(len(waveform_list_test))
+
+    text_list_train, label_list_train, text_list_test, label_list_test = (
+        get_text_ndarray()
+    )
+    print(len(text_list_train))
