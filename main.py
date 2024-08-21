@@ -354,7 +354,9 @@ def train_single_modal(
                         torch.unsqueeze(torch.tensor(x).to(device), dim=0)
                         if not text_path
                         else x
-                    ), torch.unsqueeze(torch.tensor(y,dtype=torch.float32).to(device), dim=0)
+                    ), torch.unsqueeze(
+                        torch.tensor(y, dtype=torch.float32).to(device), dim=0
+                    )
 
                     y_hat = model(x)
                     # mse_loss = mse_loss_fn(y_hat, y)
@@ -453,6 +455,7 @@ def train_single_modal(
 def test_single_modal(
     model: nn.Module = None,
     text_path: bool = False,
+    bi_label: bool = False,
     load_epoch: int = 0,
     checkpint_dir: str = None,
     save_model_name: str = None,
@@ -462,14 +465,16 @@ def test_single_modal(
     data_list_test, label_list_test = (
         get_text_ndarray(train=False)
         if text_path
-        else get_waveform_ndarary(train=False)
+        else get_waveform_ndarary(train=False, bi_label=bi_label)
     )
     dataset_len = len(data_list_test)
-    mse_loss_fn = torch.nn.BCEWithLogitsLoss()
-    (
-        test_mse_loss,
-        test_rmse_loss,
-    ) = (0.0, 0.0)
+    # mse_loss_fn = torch.nn.BCEWithLogitsLoss()
+    bce_loss_fn = torch.nn.BCEWithLogitsLoss()
+    # (
+    #     test_mse_loss,
+    #     test_rmse_loss,
+    # ) = (0.0, 0.0)
+    test_bce_loss = 0.0
     predict = []
     groundtruth = []
 
@@ -482,24 +487,29 @@ def test_single_modal(
     with torch.no_grad():
         for x, y in zip(data_list_test, label_list_test):
 
-            groundtruth.append(1 if y >= 0.53 else 0)
+            groundtruth.append(1 if y == 1 else 0)
 
             x, y = (x if text_path else torch.tensor(x).to(device)), torch.unsqueeze(
-                torch.tensor(y).to(device), dim=0
+                torch.tensor(y, dtype=torch.float32).to(device), dim=0
             )
 
-            y_hat = torch.unsqueeze(model(x), dim=0)
+            y_hat = model(x)
 
-            predict.append(1 if y_hat.item() >= 0.53 else 0)
-            mse_loss = mse_loss_fn(y_hat, y)
-            rmse_loss = torch.sqrt(mse_loss)
-            test_mse_loss += mse_loss.item()
-            test_rmse_loss += rmse_loss.item()
-        test_mse_loss /= dataset_len
-        test_rmse_loss /= dataset_len
-        print(
-            f"test  mse_loss = {test_mse_loss:>12f}, rmse_loss = {test_rmse_loss:>12f}"
-        )
+            predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
+
+            bce_loss = bce_loss_fn(y_hat, y)
+            test_bce_loss += bce_loss.item()
+            # mse_loss = mse_loss_fn(y_hat, y)
+            # rmse_loss = torch.sqrt(mse_loss)
+            # test_mse_loss += mse_loss.item()
+            # test_rmse_loss += rmse_loss.item()
+        # test_mse_loss /= dataset_len
+        # test_rmse_loss /= dataset_len
+        test_bce_loss /= dataset_len
+        # print(
+        #     f"test  mse_loss = {test_mse_loss:>12f}, rmse_loss = {test_rmse_loss:>12f}"
+        # )
+        print(f"test  bce_loss = {test_bce_loss:>12f}")
 
     # 进行分类计算
     y_pred = np.array(predict)
@@ -796,27 +806,28 @@ if __name__ == "__main__":
     # load SentenceTransformer
     # model = SentenceTransformerModel(device=device)
 
-    train_single_modal(
+    # train_single_modal(
+    #     model=model,
+    #     text_path=False,
+    #     bi_label=True,
+    #     load_epoch=0,
+    #     end_epoch=100,
+    #     save_interval=20,
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_expand",
+    #     save_model_name="Wav2Vec_expand",
+    #     visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/Wav2Vec_expand",
+    #     visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/Wav2Vec_expand",
+    #     start_lr=1e-3,
+    # )
+
+    test_single_modal(
         model=model,
-        text_path=False,
+        # text_path=True,
         bi_label=True,
-        load_epoch=0,
-        end_epoch=100,
-        save_interval=20,
+        load_epoch=20,
         checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_expand",
         save_model_name="Wav2Vec_expand",
-        visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/Wav2Vec_expand",
-        visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/Wav2Vec_expand",
-        start_lr=1e-3,
     )
-
-    # test_single_modal(
-    #     model=model,
-    #     # text_path=True,
-    #     load_epoch=20,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/CSENet",
-    #     save_model_name="CSENet",
-    # )
 
     # load fusion model
     # model = SimpleFusionModel(device=device)
