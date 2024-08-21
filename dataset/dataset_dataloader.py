@@ -175,7 +175,7 @@ def get_tri_modal_dataloader(batch_size: int = 32):
     return tri_modal_dataloader_train, tri_modal_dataloader_test
 
 
-def get_waveform_ndarary(train: bool = True):
+def get_waveform_ndarary(train: bool = True, bi_label: bool = False):
     """返回装有 waveform ndarray 的list，和 label 的 list
 
     Args:
@@ -195,24 +195,46 @@ def get_waveform_ndarary(train: bool = True):
     dir_list = sorted(dir_list, key=int)
     waveform_list = []
     label_list = (
-        np.load(
-            "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/train/labels.npz"
-        )["arr_0"]
-        / 100
-        if train
-        else np.load(
-            "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/test/labels.npz"
-        )["arr_0"]
-        / 100
+        (
+            np.load(
+                "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/train/label_expand.npz"
+            )["arr_0"]
+            / 100
+            if train
+            else np.load(
+                "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/test/labels.npz"
+            )["arr_0"]
+            / 100
+        )
+        if not bi_label
+        else (
+            np.load(
+                "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/train/label_expand_bi.npz"
+            )["arr_0"]
+            if train
+            else np.load(
+                "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/test/label_expand_bi.npz"
+            )["arr_0"]
+        )
     )
 
     for dir in dir_list:
         SAMPLE_DIR = (
             join(TRAIN_DATASET_DIR, dir) if train else join(VAL_DATASET_DIR, dir)
         )
+        waveform_1_raw, _ = torchaudio.load(join(SAMPLE_DIR, "negative.wav"))
+        waveform_2_raw, _ = torchaudio.load(join(SAMPLE_DIR, "neutral.wav"))
+        waveform_3_raw, _ = torchaudio.load(join(SAMPLE_DIR, "positive.wav"))
         waveform_1, _ = torchaudio.load(join(SAMPLE_DIR, "negative_out.wav"))
         waveform_2, _ = torchaudio.load(join(SAMPLE_DIR, "neutral_out.wav"))
         waveform_3, _ = torchaudio.load(join(SAMPLE_DIR, "positive_out.wav"))
+        if waveform_1_raw.shape[0] > 1:
+            waveform_1_raw = waveform_1_raw[0]
+        if waveform_2_raw.shape[0] > 1:
+            waveform_2_raw = waveform_2_raw[0]
+        if waveform_3_raw.shape[0] > 1:
+            waveform_3_raw = waveform_3_raw[0]
+
         if waveform_1.shape[0] > 1:
             waveform_1 = waveform_1[0]
         if waveform_2.shape[0] > 1:
@@ -221,7 +243,14 @@ def get_waveform_ndarary(train: bool = True):
             waveform_3 = waveform_3[0]
 
         # label_list += [label] * 3
-        waveform_list += [waveform_1.numpy(), waveform_2.numpy(), waveform_3.numpy()]
+        waveform_list += [
+            waveform_1_raw.numpy(),
+            waveform_1.numpy(),
+            waveform_2_raw.numpy(),
+            waveform_2.numpy(),
+            waveform_3_raw.numpy(),
+            waveform_3.numpy(),
+        ]
     # break
 
     # get train_datset and test_dataset
@@ -409,10 +438,10 @@ if __name__ == "__main__":
     # print(w.shape)
     # print(l.shape)
 
-    # waveform_list_train, label_list_train, waveform_list_test, label_list_test = (
-    #     get_waveform_ndarary()
-    # )
-    # print(len(waveform_list_train))
+    waveform_list_train, label_list_train, waveform_list_test, label_list_test = (
+        get_waveform_ndarary(bi_label=True)
+    )
+    print(len(waveform_list_train))
 
     # waveform_list_test, label_list_test = get_waveform_ndarary(train=False)
     # print(len(waveform_list_test))

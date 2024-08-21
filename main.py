@@ -26,7 +26,8 @@ VISUALIZE_DIR = os.path.join(SOR_DIR, "visualize")  # 损失数据保存目录
 visualize_train_dir = os.path.join(VISUALIZE_DIR, "train")
 visualize_val_dir = os.path.join(VISUALIZE_DIR, "val")
 save_model_name = "model_v1"  # 模型权重文件名称
-SAVE_LOSS_NAME = ["mse_loss", "r2_score", "rmse_loss"]  # 用到的损失名称
+# SAVE_LOSS_NAME = ["mse_loss", "r2_score", "rmse_loss"]  # 用到的损失名称
+SAVE_LOSS_NAME = ["bce_loss"]
 BATCH_SIZE = 16
 START_LEARNING_RATE = 1e-4
 LR_MILESTONES = [10, 20, 30, 50, 80, 100, 200]
@@ -236,6 +237,7 @@ def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
 def train_single_modal(
     model: torch.nn.Module = None,
     text_path: bool = False,
+    bi_label: bool = False,
     load_epoch: int = 0,
     end_epoch: int = 100,
     save_interval: int = 10,
@@ -261,10 +263,11 @@ def train_single_modal(
         )
     else:
         data_list_train, label_list_train, data_list_val, label_list_val = (
-            get_waveform_ndarary()
+            get_waveform_ndarary(train=tuple, bi_label=bi_label)
         )
 
-    mse_loss_fn = torch.nn.MSELoss()
+    # mse_loss_fn = torch.nn.MSELoss()
+    bce_loss_fn = torch.nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=start_lr)
     scheduler = MultiStepLR(optimizer=optimizer, milestones=LR_MILESTONES, gamma=0.1)
 
@@ -277,10 +280,12 @@ def train_single_modal(
 
     model.to(device)
     model.train()
-    MSE_Loss = []
-    RMSE_Loss = []
-    VAL_MSE_Loss = []
-    VAL_RMSE_Loss = []
+    # MSE_Loss = []
+    # RMSE_Loss = []
+    BCE_Loss = []
+    # VAL_MSE_Loss = []
+    # VAL_RMSE_Loss = []
+    VAL_BCE_Loss = []
     cur_epoch = 0
 
     try:
@@ -288,70 +293,87 @@ def train_single_modal(
         size = len(data_list_train)
         for eph in range(load_epoch + 1, end_epoch + 1):
             print(f"epoch:{eph} ", "*" * 100)
-            epoch_mse = 0.0
-            epoch_rmse = 0.0
+            # epoch_mse = 0.0
+            # epoch_rmse = 0.0
+            epoch_bce = 0.0
             for index, (x, y) in enumerate(zip(data_list_train, label_list_train)):
                 x, y = (
                     torch.unsqueeze(torch.tensor(x).to(device), dim=0)
                     if not text_path
                     else x
-                ), torch.unsqueeze(torch.tensor(y).to(device), dim=0)
-                y_hat = torch.unsqueeze(model(x), dim=0)
+                ), torch.unsqueeze(
+                    torch.tensor(y, dtype=torch.float32).to(device), dim=0
+                )
+                y_hat = model(x)
 
-                mse_loss = mse_loss_fn(y_hat, y)
-                rmse_loss = torch.sqrt(mse_loss)
+                # mse_loss = mse_loss_fn(y_hat, y)
+                # rmse_loss = torch.sqrt(mse_loss)
+                bce_loss = bce_loss_fn(y_hat, y)
 
-                mse_loss.backward()
+                # mse_loss.backward()
+                bce_loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
 
                 # record loss
-                current, mse_loss, rmse_loss = (
-                    index + 1,
-                    mse_loss.item(),
-                    rmse_loss.item(),
-                )
-                epoch_mse += mse_loss
-                epoch_rmse += rmse_loss
-                print(
-                    f"mse_loss = {mse_loss:>6f},rmse_loss = {rmse_loss:>6f} ---[{current:>5d}/{size:>5d}]"
-                )
+                current = index + 1
+                # mse_loss, rmse_loss = (
+                #     mse_loss.item(),
+                #     rmse_loss.item(),
+                # )
+                bce_loss = bce_loss.item()
+                # epoch_mse += mse_loss
+                # epoch_rmse += rmse_loss
+                epoch_bce += bce_loss
+                # print(
+                #     f"mse_loss = {mse_loss:>6f},rmse_loss = {rmse_loss:>6f} ---[{current:>5d}/{size:>5d}]"
+                # )
+                print(f"bce_loss = {bce_loss:>12f}---[{current:>5d}/{size:>5d}]")
 
-            epoch_mse /= len(data_list_train)
-            epoch_rmse /= len(data_list_train)
-            MSE_Loss.append(epoch_mse)
-            RMSE_Loss.append(epoch_rmse)
-            print(f"train mse_lost = {epoch_mse:>12f}, rmse_loss = {epoch_rmse:>12f}")
+            # epoch_mse /= len(data_list_train)
+            # epoch_rmse /= len(data_list_train)
+            epoch_bce /= size
+            # MSE_Loss.append(epoch_mse)
+            # RMSE_Loss.append(epoch_rmse)
+            BCE_Loss.append(epoch_bce)
+            # print(f"train mse_lost = {epoch_mse:>12f}, rmse_loss = {epoch_rmse:>12f}")
+            print(f"train bce_lost = {epoch_bce:>12f}")
             scheduler.step()
             # ===============================================================================================================================
             # validation logic
             model.eval()
             num_batches = len(data_list_val)
-            (
-                val_mse_loss,
-                val_rmse_loss,
-            ) = (0.0, 0.0)
+            # (
+            #     val_mse_loss,
+            #     val_rmse_loss,
+            # ) = (0.0, 0.0)
+            val_bce_loss = 0.0
             with torch.no_grad():
                 for x, y in zip(data_list_val, label_list_val):
                     x, y = (
                         torch.unsqueeze(torch.tensor(x).to(device), dim=0)
                         if not text_path
                         else x
-                    ), torch.unsqueeze(torch.tensor(y).to(device), dim=0)
+                    ), torch.unsqueeze(torch.tensor(y,dtype=torch.float32).to(device), dim=0)
 
                     y_hat = model(x)
-                    mse_loss = mse_loss_fn(y_hat, y)
-                    rmse_loss = torch.sqrt(mse_loss)
+                    # mse_loss = mse_loss_fn(y_hat, y)
+                    # rmse_loss = torch.sqrt(mse_loss)
+                    bce_loss = bce_loss_fn(y_hat, y)
 
-                    val_mse_loss += mse_loss.item()
-                    val_rmse_loss += rmse_loss.item()
-            val_mse_loss /= num_batches
-            val_rmse_loss /= num_batches
-            VAL_MSE_Loss.append(val_mse_loss)
-            VAL_RMSE_Loss.append(val_rmse_loss)
-            print(
-                f"val  mse_loss = {val_mse_loss:>12f}, rmse_loss = {val_rmse_loss:>12f}"
-            )
+                    # val_mse_loss += mse_loss.item()
+                    # val_rmse_loss += rmse_loss.item()
+                    val_bce_loss += bce_loss.item()
+            # val_mse_loss /= num_batches
+            # val_rmse_loss /= num_batches
+            val_bce_loss /= num_batches
+            # VAL_MSE_Loss.append(val_mse_loss)
+            # VAL_RMSE_Loss.append(val_rmse_loss)
+            VAL_BCE_Loss.append(val_bce_loss)
+            # print(
+            #     f"val  mse_loss = {val_mse_loss:>12f}, rmse_loss = {val_rmse_loss:>12f}"
+            # )
+            print(f"val  bce_loss = {val_bce_loss:>12f}")
             model.train()
 
             # save model parameters each [save_interval] epochs
@@ -380,7 +402,7 @@ def train_single_modal(
                     visualize_train_dir,
                     SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
                 ),
-                data=MSE_Loss,
+                data=BCE_Loss,
             )
 
             np.savez(
@@ -388,24 +410,40 @@ def train_single_modal(
                     visualize_val_dir,
                     SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
                 ),
-                data=VAL_MSE_Loss,
+                data=VAL_BCE_Loss,
             )
 
-            np.savez(
-                os.path.join(
-                    visualize_train_dir,
-                    SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=RMSE_Loss,
-            )
+            # np.savez(
+            #     os.path.join(
+            #         visualize_train_dir,
+            #         SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
+            #     ),
+            #     data=MSE_Loss,
+            # )
 
-            np.savez(
-                os.path.join(
-                    visualize_val_dir,
-                    SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=VAL_RMSE_Loss,
-            )
+            # np.savez(
+            #     os.path.join(
+            #         visualize_val_dir,
+            #         SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
+            #     ),
+            #     data=VAL_MSE_Loss,
+            # )
+
+            # np.savez(
+            #     os.path.join(
+            #         visualize_train_dir,
+            #         SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
+            #     ),
+            #     data=RMSE_Loss,
+            # )
+
+            # np.savez(
+            #     os.path.join(
+            #         visualize_val_dir,
+            #         SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
+            #     ),
+            #     data=VAL_RMSE_Loss,
+            # )
 
             print(f"save success")
         else:
@@ -427,7 +465,7 @@ def test_single_modal(
         else get_waveform_ndarary(train=False)
     )
     dataset_len = len(data_list_test)
-    mse_loss_fn = torch.nn.MSELoss()
+    mse_loss_fn = torch.nn.BCEWithLogitsLoss()
     (
         test_mse_loss,
         test_rmse_loss,
@@ -753,23 +791,24 @@ if __name__ == "__main__":
     # )
 
     # load Wav2Vec
-    # model = Wav2VecModel()
+    model = Wav2VecModel()
 
     # load SentenceTransformer
     # model = SentenceTransformerModel(device=device)
 
-    # train_single_modal(
-    #     model=model,
-    #     text_path=True,
-    #     load_epoch=0,
-    #     end_epoch=100,
-    #     save_interval=20,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/SentenceTransformer",
-    #     save_model_name="SentenceTransformer",
-    #     visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/SentenceTransformer",
-    #     visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/SentenceTransformer",
-    #     start_lr=1e-3,
-    # )
+    train_single_modal(
+        model=model,
+        text_path=False,
+        bi_label=True,
+        load_epoch=0,
+        end_epoch=100,
+        save_interval=20,
+        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_expand",
+        save_model_name="Wav2Vec_expand",
+        visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/Wav2Vec_expand",
+        visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/Wav2Vec_expand",
+        start_lr=1e-3,
+    )
 
     # test_single_modal(
     #     model=model,
@@ -780,7 +819,7 @@ if __name__ == "__main__":
     # )
 
     # load fusion model
-    model = SimpleFusionModel(device=device)
+    # model = SimpleFusionModel(device=device)
     # train_fusion_model(
     #     model=model,
     #     load_epoch=0,
@@ -793,9 +832,9 @@ if __name__ == "__main__":
     #     start_lr=1e-3,
     # )
 
-    test_fusion_model(
-        model=model,
-        load_epoch=20,
-        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/fusion_model",
-        save_model_name="fusion_model",
-    )
+    # test_fusion_model(
+    #     model=model,
+    #     load_epoch=20,
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/fusion_model",
+    #     save_model_name="fusion_model",
+    # )
