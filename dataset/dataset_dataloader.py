@@ -153,6 +153,14 @@ class TriModalDataset(Dataset):
 
 
 def get_tri_modal_dataloader(batch_size: int = 32):
+    """该方法获得的训练集和验证集都是已经经过特征提取后的特征向量，没有原始数据
+
+    Args:
+        batch_size (int, optional): _description_. Defaults to 32.
+
+    Returns:
+        dataloader: 训练和验证
+    """
     tri_modal_dataset = TriModalDataset()
     tri_modal_dataset_train, tri_modal_dataset_test = torch.utils.data.random_split(
         tri_modal_dataset, [0.8, 0.2], torch.Generator().manual_seed(42)
@@ -168,6 +176,14 @@ def get_tri_modal_dataloader(batch_size: int = 32):
 
 
 def get_waveform_ndarary(train: bool = True):
+    """返回装有 waveform ndarray 的list，和 label 的 list
+
+    Args:
+        train (bool, optional): _description_. Defaults to True.
+
+    Returns:
+        _type_: _description_
+    """
     DATASET_RAW_DIR = "/public1/cjh/workspace/DepressionPrediction/dataset/EATD-Corpus"
     TRAIN_DATASET_DIR = join(DATASET_RAW_DIR, "train")
     VAL_DATASET_DIR = join(DATASET_RAW_DIR, "validation")
@@ -229,7 +245,7 @@ def waveform_sample():
 
 
 def get_text_ndarray(train=True):
-    """给定 text 文本和标签数据集，以ndarray格式
+    """给定 text 文本和标签数据集，以ndarray格式的 List
 
     Args:
         train (bool, optional): _description_. Defaults to True.
@@ -283,6 +299,88 @@ def get_text_ndarray(train=True):
         return text_list, label_list
 
 
+def get_raw_trimodal_ndarray_dataset(
+    train: bool = True,
+):
+    DATASET_RAW_DIR = "/public1/cjh/workspace/DepressionPrediction/dataset/EATD-Corpus"
+    TRAIN_DATASET_DIR = join(DATASET_RAW_DIR, "train")
+    VAL_DATASET_DIR = join(DATASET_RAW_DIR, "validation")
+    if train:
+        dir_list = os.listdir(TRAIN_DATASET_DIR)
+    else:
+        dir_list = os.listdir(VAL_DATASET_DIR)
+
+    dir_list = sorted(dir_list, key=int)
+    label_list = (
+        np.load(
+            "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/train/labels.npz"
+        )["arr_0"]
+        / 100
+        if train
+        else np.load(
+            "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/test/labels.npz"
+        )["arr_0"]
+        / 100
+    )
+
+    waveform_list = []
+    text_list = []
+    for dir in dir_list:
+        SAMPLE_DIR = (
+            join(TRAIN_DATASET_DIR, dir) if train else join(VAL_DATASET_DIR, dir)
+        )
+
+        waveform_1, _ = torchaudio.load(join(SAMPLE_DIR, "negative_out.wav"))
+        waveform_2, _ = torchaudio.load(join(SAMPLE_DIR, "neutral_out.wav"))
+        waveform_3, _ = torchaudio.load(join(SAMPLE_DIR, "positive_out.wav"))
+        if waveform_1.shape[0] > 1:
+            waveform_1 = waveform_1[0]
+        if waveform_2.shape[0] > 1:
+            waveform_2 = waveform_2[0]
+        if waveform_3.shape[0] > 1:
+            waveform_3 = waveform_3[0]
+
+        waveform_list += [waveform_1.numpy(), waveform_2.numpy(), waveform_3.numpy()]
+
+        with open(join(SAMPLE_DIR, "negative.txt")) as text_file:
+            text_1 = text_file.read()
+            text_list.append(text_1)
+
+        with open(join(SAMPLE_DIR, "neutral.txt")) as text_file:
+            text_2 = text_file.read()
+            text_list.append(text_2)
+
+        with open(join(SAMPLE_DIR, "positive.txt")) as text_file:
+            text_3 = text_file.read()
+            text_list.append(text_3)
+
+    # break
+
+    # get train_datset and test_dataset
+    if train:
+        (
+            waveform_list_train,
+            waveform_list_test,
+            text_list_train,
+            text_list_test,
+            label_train,
+            label_test,
+        ) = train_test_split(
+            waveform_list, text_list, label_list, test_size=0.2, random_state=42
+        )
+        return (
+            waveform_list_train,
+            waveform_list_test,
+            text_list_train,
+            text_list_test,
+            label_train,
+            label_test,
+        )
+
+    else:
+        return waveform_list, text_list, label_list
+
+
 if __name__ == "__main__":
     # (
     #     waveform_tf_train_dataloader,
@@ -319,7 +417,16 @@ if __name__ == "__main__":
     # waveform_list_test, label_list_test = get_waveform_ndarary(train=False)
     # print(len(waveform_list_test))
 
-    text_list_train, label_list_train, text_list_test, label_list_test = (
-        get_text_ndarray()
-    )
-    print(len(text_list_train))
+    # text_list_train, label_list_train, text_list_test, label_list_test = (
+    #     get_text_ndarray()
+    # )
+    # print(len(text_list_train))
+    (
+        waveform_list_train,
+        waveform_list_test,
+        text_list_train,
+        text_list_test,
+        label_train,
+        label_test,
+    ) = get_raw_trimodal_ndarray_dataset()
+    pass

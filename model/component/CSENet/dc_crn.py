@@ -4,10 +4,12 @@ import torch.nn.init as init
 import os
 import sys
 
+sys.path.append(r"/public1/cjh/workspace/DepressionPrediction")
+
 # from show import show_params, show_model
 import torch.nn.functional as F
-from model.component.CSENet.conv_stft import ConvSTFT, ConviSTFT
 
+from model.component.CSENet.conv_stft import ConvSTFT, ConviSTFT
 from model.component.CSENet.complexnn import (
     ComplexConv2d,
     ComplexConvTranspose2d,
@@ -15,6 +17,15 @@ from model.component.CSENet.complexnn import (
     complex_cat,
     ComplexBatchNorm,
 )
+
+# from conv_stft import ConvSTFT, ConviSTFT
+# from complexnn import (
+#     ComplexConv2d,
+#     ComplexConvTranspose2d,
+#     NavieComplexLSTM,
+#     complex_cat,
+#     ComplexBatchNorm,
+# )
 
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -302,6 +313,7 @@ class DCCRN(nn.Module):
         kernel_size=5,
         kernel_num=[16, 32, 64, 128, 256, 256],
         resnet_type="18",
+        return_hidden: bool = False,
     ):
         """
 
@@ -311,6 +323,8 @@ class DCCRN(nn.Module):
         """
 
         super(DCCRN, self).__init__()
+
+        self.return_hidden = return_hidden
 
         # for fft
         self.win_len = win_len
@@ -460,7 +474,7 @@ class DCCRN(nn.Module):
         mu = self.fc_mu(feat)
 
         # y=self.Conv_regression_selfattention(out)
-        return mu
+        return mu if not self.return_hidden else feat
 
 
 if __name__ == "__main__":
@@ -495,6 +509,7 @@ if __name__ == "__main__":
         # masking_mode="E",
         use_clstm=True,
         kernel_num=[32, 64, 128, 256, 256, 256],
+        return_hidden=True,
     )
     outputs = net(inputs)
     # loss = net.loss(outputs, labels, loss_mode='SI-SNR')
