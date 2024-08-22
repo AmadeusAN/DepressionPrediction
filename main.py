@@ -259,11 +259,11 @@ def train_single_modal(
 
     if text_path:
         data_list_train, label_list_train, data_list_val, label_list_val = (
-            get_text_ndarray()
+            get_text_ndarray(train=True, bi_label=bi_label)
         )
     else:
         data_list_train, label_list_train, data_list_val, label_list_val = (
-            get_waveform_ndarary(train=tuple, bi_label=bi_label)
+            get_waveform_ndarary(train=True, bi_label=bi_label)
         )
 
     # mse_loss_fn = torch.nn.MSELoss()
@@ -299,8 +299,8 @@ def train_single_modal(
             for index, (x, y) in enumerate(zip(data_list_train, label_list_train)):
                 x, y = (
                     torch.unsqueeze(torch.tensor(x).to(device), dim=0)
-                    if not text_path
-                    else x
+                    if not isinstance(x, torch.Tensor)
+                    else x.to(device) if not text_path else x
                 ), torch.unsqueeze(
                     torch.tensor(y, dtype=torch.float32).to(device), dim=0
                 )
@@ -308,7 +308,9 @@ def train_single_modal(
 
                 # mse_loss = mse_loss_fn(y_hat, y)
                 # rmse_loss = torch.sqrt(mse_loss)
-                bce_loss = bce_loss_fn(y_hat, y)
+                bce_loss = bce_loss_fn(
+                    torch.unsqueeze(y_hat, dim=0) if text_path else y_hat, y
+                )
 
                 # mse_loss.backward()
                 bce_loss.backward()
@@ -348,20 +350,27 @@ def train_single_modal(
             #     val_rmse_loss,
             # ) = (0.0, 0.0)
             val_bce_loss = 0.0
+            predict = []
+            groundtruth = []
             with torch.no_grad():
                 for x, y in zip(data_list_val, label_list_val):
+                    groundtruth.append(1 if y == 1 else 0)
                     x, y = (
                         torch.unsqueeze(torch.tensor(x).to(device), dim=0)
-                        if not text_path
-                        else x
+                        if not isinstance(x, torch.Tensor)
+                        else x.to(device) if not text_path else x
                     ), torch.unsqueeze(
                         torch.tensor(y, dtype=torch.float32).to(device), dim=0
                     )
 
                     y_hat = model(x)
+
+                    predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
                     # mse_loss = mse_loss_fn(y_hat, y)
                     # rmse_loss = torch.sqrt(mse_loss)
-                    bce_loss = bce_loss_fn(y_hat, y)
+                    bce_loss = bce_loss_fn(
+                        torch.unsqueeze(y_hat, dim=0) if text_path else y_hat, y
+                    )
 
                     # val_mse_loss += mse_loss.item()
                     # val_rmse_loss += rmse_loss.item()
@@ -376,6 +385,32 @@ def train_single_modal(
             #     f"val  mse_loss = {val_mse_loss:>12f}, rmse_loss = {val_rmse_loss:>12f}"
             # )
             print(f"val  bce_loss = {val_bce_loss:>12f}")
+
+            # 进行分类计算
+            y_pred = np.array(predict)
+            y_true = np.array(groundtruth)
+
+            # true positive
+            TP = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 1)))
+            print(f"TP = {TP}")
+
+            # false positive
+            FP = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 1)))
+            print(f"FP = {FP}")
+
+            # true negative
+            TN = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 0)))
+            print(f"TN = {TN}")
+
+            # false negative
+            FN = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 0)))
+            print(f"FN = {FN}")
+
+            p = precision_score(y_true, y_pred, average="binary")
+            r = recall_score(y_true, y_pred, average="binary")
+            f1score = f1_score(y_true, y_pred, average="binary")
+
+            print(f"precision = {p}, recall = {r}, f1score = {f1score}")
             model.train()
 
             # save model parameters each [save_interval] epochs
@@ -793,7 +828,7 @@ if __name__ == "__main__":
 
     # print(VISUALIZE_TRAIN_DIR)
 
-    # load DCCRN
+    # # load DCCRN
     # model = DCCRN(
     #     rnn_units=256,
     #     use_clstm=True,
@@ -803,31 +838,31 @@ if __name__ == "__main__":
     # load Wav2Vec
     model = Wav2VecModel()
 
-    # load SentenceTransformer
+    # # load SentenceTransformer
     # model = SentenceTransformerModel(device=device)
 
-    # train_single_modal(
-    #     model=model,
-    #     text_path=False,
-    #     bi_label=True,
-    #     load_epoch=0,
-    #     end_epoch=100,
-    #     save_interval=20,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_expand",
-    #     save_model_name="Wav2Vec_expand",
-    #     visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/Wav2Vec_expand",
-    #     visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/Wav2Vec_expand",
-    #     start_lr=1e-3,
-    # )
-
-    test_single_modal(
+    train_single_modal(
         model=model,
-        # text_path=True,
+        text_path=False,
         bi_label=True,
-        load_epoch=20,
-        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_expand",
-        save_model_name="Wav2Vec_expand",
+        load_epoch=0,
+        end_epoch=100,
+        save_interval=20,
+        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_dataarguementation",
+        save_model_name="Wav2Vec_dataarguementation",
+        visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/Wav2Vec_dataarguementation",
+        visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/Wav2Vec_dataarguementation",
+        start_lr=1e-3,
     )
+
+    # test_single_modal(
+    #     model=model,
+    #     # text_path=True,
+    #     bi_label=True,
+    #     load_epoch=20,
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/DCCRN_expand",
+    #     save_model_name="DCCRN_expand",
+    # )
 
     # load fusion model
     # model = SimpleFusionModel(device=device)
