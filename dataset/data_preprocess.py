@@ -17,7 +17,12 @@ NDARRAY_TRAIN_DIR = join(NDARRAY_DIR, "train")
 NDARRAY_TEST_DIR = join(NDARRAY_DIR, "test")
 
 
-def get_raw_waveform_text_label(train: bool = True, binary_label: bool = True):
+def get_raw_waveform_text_label(
+    train: bool = True,
+    binary_label: bool = True,
+    resample: bool = False,
+    resample_rate: int = 8000,
+):
     """
     读取原始音频文本数据集，并返回waveform，text 和 label 的列表
     其中 label_new >= 53. 的抑郁症样本进行重采样，抑郁症样本数量扩充到了 6 倍。
@@ -30,6 +35,10 @@ def get_raw_waveform_text_label(train: bool = True, binary_label: bool = True):
     """
     dir_list = os.listdir(TRAIN_DATASET_DIR) if train else os.listdir(VAL_DATASET_DIR)
     dir_list = sorted(dir_list, key=int)
+
+    resampler = torchaudio.transforms.Resample(
+        orig_freq=16000, new_freq=resample_rate, lowpass_filter_width=6
+    )
 
     waveform_list = []
     sample_rate_list = []
@@ -52,6 +61,13 @@ def get_raw_waveform_text_label(train: bool = True, binary_label: bool = True):
             waveform_2 = waveform_2[0]
         if waveform_3.shape[0] > 1:
             waveform_3 = waveform_3[0]
+
+        if resample:
+            waveform_1 = resampler(waveform_1)
+            waveform_2 = resampler(waveform_2)
+            waveform_3 = resampler(waveform_3)
+            sample_rate_1 = resample_rate
+
         with open(join(SAMPLE_DIR, "negative.txt")) as text_file:
             text_1 = text_file.read()
 
@@ -149,10 +165,14 @@ def apply_noise(
 
 
 def get_raw_waveform_text_label_with_argumentation(
-    train: bool = True, binary_label: bool = True
+    train: bool = True,
+    binary_label: bool = True,
+    resample: bool = False,
 ):
     waveform_list, label_list, text_list, sample_rate_list = (
-        get_raw_waveform_text_label(train=train, binary_label=binary_label)
+        get_raw_waveform_text_label(
+            train=train, binary_label=binary_label, resample=resample
+        )
     )
     noise, _ = torchaudio.load(
         r"/public1/cjh/workspace/DepressionPrediction/dataset/sample/white_noise.wav"
@@ -178,14 +198,30 @@ def get_raw_waveform_text_label_with_argumentation(
     return new_waveform_list, new_label_list, new_text_list
 
 
-if __name__ == "__main__":
-    # waveform_list, label_list, text_list, sample_rate_list = (
-    #     get_raw_waveform_text_label(train=True, binary_label=True)
+def apply_audio_resample(
+    target_sample_rate, waveform, sample_rate, return_ndarray: bool = True
+):
+    if not isinstance(waveform, torch.Tensor):
+        waveform = torch.unsqueeze(torch.tensor(waveform), dim=0)
+    resampler = torchaudio.transforms.Resample(
+        orig_freq=sample_rate, new_freq=target_sample_rate, lowpass_filter_width=6
+    )
+    # resample_waveform = F.resample(
+    #     waveform, sample_rate, target_sample_rate, lowpass_filter_width=6
     # )
+    resample_waveform = resampler(waveform)
 
-    # waveform = torch.unsqueeze(torch.tensor(waveform_list[0]), dim=0)
-    # sample_rate = sample_rate_list[0]
-    # Audio(data=waveform, rate=sample_rate)
+    return resample_waveform.numpy() if return_ndarray else resample_waveform
+
+
+if __name__ == "__main__":
+    waveform_list, label_list, text_list, sample_rate_list = (
+        get_raw_waveform_text_label(train=True, binary_label=True, resample=True)
+    )
+
+    waveform = torch.unsqueeze(torch.tensor(waveform_list[0]), dim=0)
+    sample_rate = sample_rate_list[0]
+    Audio(data=waveform, rate=sample_rate)
 
     # waveform_effect = apply_noise(
     #     waveform=waveform,
@@ -194,7 +230,10 @@ if __name__ == "__main__":
     # )
     # Audio(data=waveform_effect, rate=sample_rate)
 
-    new_waveform_list, new_label_list, new_text_list = (
-        get_raw_waveform_text_label_with_argumentation(train=True, binary_label=True)
-    )
-    print(len(new_waveform_list))
+    waveform_effect = apply_audio_resample(8000, waveform, sample_rate)
+    Audio(data=waveform_effect, rate=8000)
+
+    # new_waveform_list, new_label_list, new_text_list = (
+    #     get_raw_waveform_text_label_with_argumentation(train=True, binary_label=True)
+    # )
+    # print(len(new_waveform_list))

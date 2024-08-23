@@ -238,6 +238,7 @@ def train_single_modal(
     model: torch.nn.Module = None,
     text_path: bool = False,
     bi_label: bool = False,
+    resample: bool = True,
     load_epoch: int = 0,
     end_epoch: int = 100,
     save_interval: int = 10,
@@ -263,7 +264,7 @@ def train_single_modal(
         )
     else:
         data_list_train, label_list_train, data_list_val, label_list_val = (
-            get_waveform_ndarary(train=True, bi_label=bi_label)
+            get_waveform_ndarary(train=True, bi_label=bi_label, resample=resample)
         )
 
     # mse_loss_fn = torch.nn.MSELoss()
@@ -845,13 +846,14 @@ if __name__ == "__main__":
         model=model,
         text_path=False,
         bi_label=True,
+        resample=True,
         load_epoch=0,
         end_epoch=100,
         save_interval=20,
-        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_dataarguementation",
-        save_model_name="Wav2Vec_dataarguementation",
-        visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/Wav2Vec_dataarguementation",
-        visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/Wav2Vec_dataarguementation",
+        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_resample_dataarguementation",
+        save_model_name="Wav2Vec_resample_dataarguementation",
+        visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/Wav2Vec_resample_dataarguementation",
+        visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/Wav2Vec_resample_dataarguementation",
         start_lr=1e-3,
     )
 

@@ -176,7 +176,9 @@ def get_tri_modal_dataloader(batch_size: int = 32):
     return tri_modal_dataloader_train, tri_modal_dataloader_test
 
 
-def get_waveform_ndarary(train: bool = True, bi_label: bool = False):
+def get_waveform_ndarary(
+    train: bool = True, bi_label: bool = False, resample: bool = True
+):
     """返回装有 waveform ndarray 的list，和 label 的 list
 
     Args:
@@ -255,7 +257,7 @@ def get_waveform_ndarary(train: bool = True, bi_label: bool = False):
     # # break
 
     waveform_list, label_list, _ = get_raw_waveform_text_label_with_argumentation(
-        train=train, binary_label=bi_label
+        train=train, binary_label=bi_label, resample=resample
     )
 
     # get train_datset and test_dataset
