@@ -20,6 +20,7 @@ NDARRAY_TEST_DIR = join(NDARRAY_DIR, "test")
 def get_raw_waveform_text_label(
     train: bool = True,
     binary_label: bool = True,
+    concat_num: int = 3,
     resample: bool = False,
     resample_rate: int = 8000,
 ):
@@ -82,14 +83,16 @@ def get_raw_waveform_text_label(
                 torch.cat(
                     [cur_waveform_list[x], cur_waveform_list[y], cur_waveform_list[z]]
                 ).numpy()
-                for x, y, z in permutations(range(3), 3)
+                for x, y, z in permutations(range(3), concat_num)
             ]
             text_list += [
                 cur_text_list[x] + cur_text_list[y] + cur_text_list[z]
-                for x, y, z in permutations(range(3), 3)
+                for x, y, z in permutations(range(3), concat_num)
             ]
-            label_list += [label if not binary_label else 1.0] * 6
-            sample_rate_list += [sample_rate_1] * 6
+            # expansion = len(permutations(range(3), concat_num))
+            expansion = 6
+            label_list += [label if not binary_label else 1.0] * expansion
+            sample_rate_list += [sample_rate_1] * expansion
 
         else:
             waveform_list += [torch.cat(cur_waveform_list).numpy()]
@@ -167,11 +170,17 @@ def apply_noise(
 def get_raw_waveform_text_label_with_argumentation(
     train: bool = True,
     binary_label: bool = True,
-    resample: bool = False,
+    resample: bool = True,
+    resampel_rate: int = 8000,
+    concat_num: int = 3,
 ):
     waveform_list, label_list, text_list, sample_rate_list = (
         get_raw_waveform_text_label(
-            train=train, binary_label=binary_label, resample=resample
+            train=train,
+            binary_label=binary_label,
+            resample=resample,
+            resample_rate=resampel_rate,
+            concat_num=concat_num,
         )
     )
     noise, _ = torchaudio.load(
@@ -216,7 +225,9 @@ def apply_audio_resample(
 
 if __name__ == "__main__":
     waveform_list, label_list, text_list, sample_rate_list = (
-        get_raw_waveform_text_label(train=False, binary_label=True, resample=True)
+        get_raw_waveform_text_label(
+            train=True, binary_label=True, resample=True, resample_rate=4000
+        )
     )
 
     waveform = torch.unsqueeze(torch.tensor(waveform_list[0]), dim=0)

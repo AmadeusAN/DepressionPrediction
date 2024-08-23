@@ -239,6 +239,8 @@ def train_single_modal(
     text_path: bool = False,
     bi_label: bool = False,
     resample: bool = True,
+    resample_rate: int = 8000,
+    concat_num: int = 3,
     load_epoch: int = 0,
     end_epoch: int = 100,
     save_interval: int = 10,
@@ -260,11 +262,22 @@ def train_single_modal(
 
     if text_path:
         data_list_train, label_list_train, data_list_val, label_list_val = (
-            get_text_ndarray(train=True, bi_label=bi_label)
+            get_text_ndarray(
+                train=True,
+                bi_label=bi_label,
+                resample=resample,
+                resample_rate=resample_rate,
+            )
         )
     else:
         data_list_train, label_list_train, data_list_val, label_list_val = (
-            get_waveform_ndarary(train=True, bi_label=bi_label, resample=resample)
+            get_waveform_ndarary(
+                train=True,
+                bi_label=bi_label,
+                resample=resample,
+                resample_rate=resample_rate,
+                concat_num=concat_num,
+            )
         )
 
     # mse_loss_fn = torch.nn.MSELoss()
@@ -298,11 +311,14 @@ def train_single_modal(
             # epoch_rmse = 0.0
             epoch_bce = 0.0
             for index, (x, y) in enumerate(zip(data_list_train, label_list_train)):
-                x, y = (
-                    torch.unsqueeze(torch.tensor(x).to(device), dim=0)
-                    if not isinstance(x, torch.Tensor)
-                    else x.to(device) if not text_path else x
-                ), torch.unsqueeze(
+                if not text_path:
+                    x = torch.unsqueeze(torch.tensor(x).to(device), dim=0)
+                # x, y = (
+                #     torch.unsqueeze(torch.tensor(x).to(device), dim=0)
+                #     if not isinstance(x, torch.Tensor)
+                #     else x.to(device) if not text_path else x
+                # ),
+                y = torch.unsqueeze(
                     torch.tensor(y, dtype=torch.float32).to(device), dim=0
                 )
                 y_hat = model(x)
@@ -356,11 +372,14 @@ def train_single_modal(
             with torch.no_grad():
                 for x, y in zip(data_list_val, label_list_val):
                     groundtruth.append(1 if y == 1 else 0)
-                    x, y = (
-                        torch.unsqueeze(torch.tensor(x).to(device), dim=0)
-                        if not isinstance(x, torch.Tensor)
-                        else x.to(device) if not text_path else x
-                    ), torch.unsqueeze(
+                    if not text_path:
+                        x = torch.unsqueeze(torch.tensor(x).to(device), dim=0)
+                    # x, y = (
+                    #     torch.unsqueeze(torch.tensor(x).to(device), dim=0)
+                    #     if not isinstance(x, torch.Tensor)
+                    #     else x.to(device) if not text_path else x
+                    # ),
+                    y = torch.unsqueeze(
                         torch.tensor(y, dtype=torch.float32).to(device), dim=0
                     )
 
@@ -492,6 +511,9 @@ def test_single_modal(
     model: nn.Module = None,
     text_path: bool = False,
     bi_label: bool = False,
+    resample: bool = True,
+    resample_rate: int = 8000,
+    concat_num: int = 3,
     load_epoch: int = 0,
     checkpint_dir: str = None,
     save_model_name: str = None,
@@ -499,9 +521,21 @@ def test_single_modal(
 
     print(f"use {device}")
     data_list_test, label_list_test = (
-        get_text_ndarray(train=False)
+        get_text_ndarray(
+            train=False,
+            bi_label=bi_label,
+            resample=resample,
+            resample_rate=resample_rate,
+            concat_num=concat_num,
+        )
         if text_path
-        else get_waveform_ndarary(train=False, bi_label=bi_label)
+        else get_waveform_ndarary(
+            train=False,
+            bi_label=bi_label,
+            resample=resample,
+            resample_rate=resample_rate,
+            concat_num=concat_num,
+        )
     )
     dataset_len = len(data_list_test)
     # mse_loss_fn = torch.nn.BCEWithLogitsLoss()
@@ -533,7 +567,9 @@ def test_single_modal(
 
             predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
 
-            bce_loss = bce_loss_fn(y_hat, y)
+            bce_loss = bce_loss_fn(
+                torch.unsqueeze(y_hat, dim=0) if text_path else y_hat, y
+            )
             test_bce_loss += bce_loss.item()
             # mse_loss = mse_loss_fn(y_hat, y)
             # rmse_loss = torch.sqrt(mse_loss)
@@ -836,34 +872,39 @@ if __name__ == "__main__":
     #     kernel_num=[32, 64, 128, 256, 256, 256],
     # )
 
-    # load Wav2Vec
-    model = Wav2VecModel()
+    # # load Wav2Vec
+    # model = Wav2VecModel()
 
-    # # load SentenceTransformer
-    # model = SentenceTransformerModel(device=device)
+    # load SentenceTransformer
+    model = SentenceTransformerModel(device=device)
 
     # train_single_modal(
     #     model=model,
-    #     text_path=False,
+    #     text_path=True,
     #     bi_label=True,
     #     resample=True,
+    #     resample_rate=8000,
+    #     concat_num=3,
     #     load_epoch=0,
     #     end_epoch=100,
-    #     save_interval=20,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_resample_dataarguementation",
-    #     save_model_name="Wav2Vec_resample_dataarguementation",
-    #     visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/Wav2Vec_resample_dataarguementation",
-    #     visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/Wav2Vec_resample_dataarguementation",
+    #     save_interval=10,
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/SentenceTransformer_resample_dataarguementation",
+    #     save_model_name="SentenceTransformer_resample_dataarguementation",
+    #     visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/SentenceTransformer_resample_dataarguementation",
+    #     visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/SentenceTransformer_resample_dataarguementation",
     #     start_lr=1e-3,
     # )
 
     test_single_modal(
         model=model,
-        text_path=False,
+        text_path=True,
         bi_label=True,
-        load_epoch=40,
-        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_resample_dataarguementation",
-        save_model_name="Wav2Vec_resample_dataarguementation",
+        resample=True,
+        resample_rate=8000,
+        concat_num=3,
+        load_epoch=30,
+        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/SentenceTransformer_resample_dataarguementation",
+        save_model_name="SentenceTransformer_resample_dataarguementation",
     )
 
     # load fusion model
