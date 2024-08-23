@@ -525,9 +525,9 @@ def test_single_modal(
 
             groundtruth.append(1 if y == 1 else 0)
 
-            x, y = (x if text_path else torch.tensor(x).to(device)), torch.unsqueeze(
-                torch.tensor(y, dtype=torch.float32).to(device), dim=0
-            )
+            x, y = (
+                x if text_path else torch.unsqueeze(torch.tensor(x), dim=0).to(device)
+            ), torch.unsqueeze(torch.tensor(y, dtype=torch.float32).to(device), dim=0)
 
             y_hat = model(x)
 
@@ -842,29 +842,29 @@ if __name__ == "__main__":
     # # load SentenceTransformer
     # model = SentenceTransformerModel(device=device)
 
-    train_single_modal(
+    # train_single_modal(
+    #     model=model,
+    #     text_path=False,
+    #     bi_label=True,
+    #     resample=True,
+    #     load_epoch=0,
+    #     end_epoch=100,
+    #     save_interval=20,
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_resample_dataarguementation",
+    #     save_model_name="Wav2Vec_resample_dataarguementation",
+    #     visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/Wav2Vec_resample_dataarguementation",
+    #     visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/Wav2Vec_resample_dataarguementation",
+    #     start_lr=1e-3,
+    # )
+
+    test_single_modal(
         model=model,
         text_path=False,
         bi_label=True,
-        resample=True,
-        load_epoch=0,
-        end_epoch=100,
-        save_interval=20,
+        load_epoch=40,
         checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_resample_dataarguementation",
         save_model_name="Wav2Vec_resample_dataarguementation",
-        visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/Wav2Vec_resample_dataarguementation",
-        visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/Wav2Vec_resample_dataarguementation",
-        start_lr=1e-3,
     )
-
-    # test_single_modal(
-    #     model=model,
-    #     # text_path=True,
-    #     bi_label=True,
-    #     load_epoch=20,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/DCCRN_expand",
-    #     save_model_name="DCCRN_expand",
-    # )
 
     # load fusion model
     # model = SimpleFusionModel(device=device)

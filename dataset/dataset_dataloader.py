@@ -2,12 +2,18 @@
 主要的数据集加载模块
 """
 
+import sys
 import torch
 import torch.nn as nn
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from os.path import join
-from dataset.data_preprocess import get_raw_waveform_text_label_with_argumentation
+
+sys.path.append(r"/public1/cjh/workspace/DepressionPrediction")
+from dataset.data_preprocess import (
+    get_raw_waveform_text_label_with_argumentation,
+    get_raw_waveform_text_label,
+)
 import torchaudio
 import os
 from sklearn.model_selection import train_test_split
@@ -18,53 +24,6 @@ VAL_DATASET_DIR = join(DATASET_RAW_DIR, "validation")
 
 NDARRAY_DIR = "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray"
 NDARRAY_TRAIN_DIR = join(NDARRAY_DIR, "train")
-
-
-class WaveformTFDataset(Dataset):
-    def __init__(self, label_dataset: np.ndarray = None):
-        super(WaveformTFDataset, self).__init__()
-        self.data_np = np.load(join(NDARRAY_TRAIN_DIR, "waveform_tf_raw.npz"))["arr_0"]
-        self.label = label_dataset
-
-    def __len__(
-        self,
-    ):
-        return len(self.data_np)
-
-    def __getitem__(self, index):
-        return self.data_np[index], self.label[index]
-
-
-class EmotinoHiddVecDataset(Dataset):
-    def __init__(self, label_dataset: np.ndarray = None):
-        super(EmotinoHiddVecDataset, self).__init__()
-        self.data_np = np.load(join(NDARRAY_TRAIN_DIR, "emotion_hiddenvec_raw.npz"))[
-            "arr_0"
-        ]
-        self.label = label_dataset
-
-    def __len__(
-        self,
-    ):
-        return len(self.data_np)
-
-    def __getitem__(self, index):
-        return self.data_np[index], self.label[index]
-
-
-class TextVecDataset(Dataset):
-    def __init__(self, label_dataset: np.ndarray = None):
-        super(TextVecDataset, self).__init__()
-        self.data_np = np.load(join(NDARRAY_TRAIN_DIR, "text_raw.npz"))["arr_0"]
-        self.label = label_dataset
-
-    def __len__(
-        self,
-    ):
-        return len(self.data_np)
-
-    def __getitem__(self, index):
-        return self.data_np[index], self.label[index]
 
 
 class TriModalDataset(Dataset):
@@ -256,9 +215,14 @@ def get_waveform_ndarary(
     #     ]
     # # break
 
-    waveform_list, label_list, _ = get_raw_waveform_text_label_with_argumentation(
-        train=train, binary_label=bi_label, resample=resample
-    )
+    if train:
+        waveform_list, label_list, _ = get_raw_waveform_text_label_with_argumentation(
+            train=train, binary_label=bi_label, resample=resample
+        )
+    else:
+        waveform_list, label_list, _, _ = get_raw_waveform_text_label(
+            train=False, binary_label=bi_label, resample=True
+        )
 
     # get train_datset and test_dataset
     if train:
@@ -463,13 +427,15 @@ if __name__ == "__main__":
 
     # X_train, y_train, X_test, y_test = get_text_ndarray(train=True, bi_label=True)
 
-    waveform_list_train, label_list_train, waveform_list_test, label_list_test = (
-        get_waveform_ndarary(bi_label=True)
-    )
-    print(len(waveform_list_train))
+    # waveform_list_train, label_list_train, waveform_list_test, label_list_test = (
+    #     get_waveform_ndarary(bi_label=True)
+    # )
+    # print(len(waveform_list_train))
 
-    # waveform_list_test, label_list_test = get_waveform_ndarary(train=False)
-    # print(len(waveform_list_test))
+    waveform_list_test, label_list_test = get_waveform_ndarary(
+        train=False, bi_label=True, resample=True
+    )
+    print(len(waveform_list_test))
 
     # text_list_train, label_list_train, text_list_test, label_list_test = (
     #     get_text_ndarray()

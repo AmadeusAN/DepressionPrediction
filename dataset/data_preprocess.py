@@ -55,12 +55,9 @@ def get_raw_waveform_text_label(
         waveform_2, _ = torchaudio.load(join(SAMPLE_DIR, "neutral_out.wav"))
         waveform_3, _ = torchaudio.load(join(SAMPLE_DIR, "positive_out.wav"))
 
-        if waveform_1.shape[0] > 1:
-            waveform_1 = waveform_1[0]
-        if waveform_2.shape[0] > 1:
-            waveform_2 = waveform_2[0]
-        if waveform_3.shape[0] > 1:
-            waveform_3 = waveform_3[0]
+        waveform_1 = waveform_1[0]
+        waveform_2 = waveform_2[0]
+        waveform_3 = waveform_3[0]
 
         if resample:
             waveform_1 = resampler(waveform_1)
@@ -79,8 +76,8 @@ def get_raw_waveform_text_label(
         cur_waveform_list = [waveform_1, waveform_2, waveform_3]
         cur_text_list = [text_1, text_2, text_3]
 
-        if label >= 53.0:
-            # 抑郁症人群需要进行随机拼接以扩充样本数量
+        if label >= 53.0 and train:
+            # 抑郁症人群需要进行随机拼接以扩充样本数量，不过当然是在训练的时候。
             waveform_list += [
                 torch.cat(
                     [cur_waveform_list[x], cur_waveform_list[y], cur_waveform_list[z]]
@@ -97,7 +94,10 @@ def get_raw_waveform_text_label(
         else:
             waveform_list += [torch.cat(cur_waveform_list).numpy()]
             text_list += ["".join(cur_text_list)]
-            label_list += [label if not binary_label else 0.0]
+            if binary_label:
+                label_list += [1.0 if label >= 53.0 else 0.0]
+            else:
+                label_list += [label]
             sample_rate_list += [sample_rate_1]
 
     label_list = np.expand_dims(np.array(label_list), axis=-1)
@@ -216,7 +216,7 @@ def apply_audio_resample(
 
 if __name__ == "__main__":
     waveform_list, label_list, text_list, sample_rate_list = (
-        get_raw_waveform_text_label(train=True, binary_label=True, resample=True)
+        get_raw_waveform_text_label(train=False, binary_label=True, resample=True)
     )
 
     waveform = torch.unsqueeze(torch.tensor(waveform_list[0]), dim=0)
