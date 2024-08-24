@@ -107,6 +107,65 @@ def get_raw_waveform_text_label(
     return waveform_list, label_list, text_list, sample_rate_list
 
 
+def get_raw_waveform_text_label_with_argumentation(
+    train: bool = True,
+    binary_label: bool = True,
+    resample: bool = True,
+    resample_rate: int = 8000,
+    concat_num: int = 3,
+):
+    """获得增强后的数据集
+
+    Args:
+        train (bool, optional): _description_. Defaults to True.
+        binary_label (bool, optional): _description_. Defaults to True.
+        resample (bool, optional): _description_. Defaults to True.
+        resample_rate (int, optional): _description_. Defaults to 8000.
+        concat_num (int, optional): _description_. Defaults to 3.
+
+    Returns:
+        _type_: _description_
+    
+    Description:
+        1. 随机增强数据集，增强包括：rir、noise、原数据集。
+    """
+
+    # 首先获取原始数据集
+    waveform_list, label_list, text_list, sample_rate_list = (
+        get_raw_waveform_text_label(
+            train=train,
+            binary_label=binary_label,
+            resample=resample,
+            resample_rate=resample_rate,
+            concat_num=concat_num,
+        )
+    )
+    noise, _ = torchaudio.load(
+        r"/public1/cjh/workspace/DepressionPrediction/dataset/sample/white_noise.wav"
+    )
+    new_waveform_list = []
+    new_label_list = []
+    new_text_list = []
+
+    for i, (w, t, l) in enumerate(zip(waveform_list, text_list, label_list)):
+        # 应用增强效果
+        new_waveform_list.append(apply_RIR(w, sample_rate=sample_rate_list[i]))
+        new_waveform_list.append(
+            apply_noise(
+                w,
+                sample_rate=sample_rate_list[i],
+                single_to_noise_db_rate=10,
+                noise=noise,
+            )
+        )
+        new_waveform_list.append(w)
+        for _ in range(3):
+            new_text_list.append(t)
+            new_label_list.append(l)
+    # 返回增强后的数据集
+    return new_waveform_list, new_label_list, new_text_list
+
+
 @DeprecationWarning
 def apply_effects_and_filtering(waveform, sample_rate):
     """出现了难以理解的bug
@@ -165,46 +224,6 @@ def apply_noise(
     snr_dbs = torch.tensor([single_to_noise_db_rate])
     noisy_speeches = F.add_noise(waveform, noise, snr_dbs)
     return noisy_speeches
-
-
-def get_raw_waveform_text_label_with_argumentation(
-    train: bool = True,
-    binary_label: bool = True,
-    resample: bool = True,
-    resampel_rate: int = 8000,
-    concat_num: int = 3,
-):
-    waveform_list, label_list, text_list, sample_rate_list = (
-        get_raw_waveform_text_label(
-            train=train,
-            binary_label=binary_label,
-            resample=resample,
-            resample_rate=resampel_rate,
-            concat_num=concat_num,
-        )
-    )
-    noise, _ = torchaudio.load(
-        r"/public1/cjh/workspace/DepressionPrediction/dataset/sample/white_noise.wav"
-    )
-    new_waveform_list = []
-    new_label_list = []
-    new_text_list = []
-
-    for i, (w, t, l) in enumerate(zip(waveform_list, text_list, label_list)):
-        new_waveform_list.append(apply_RIR(w, sample_rate=sample_rate_list[i]))
-        new_waveform_list.append(
-            apply_noise(
-                w,
-                sample_rate=sample_rate_list[i],
-                single_to_noise_db_rate=10,
-                noise=noise,
-            )
-        )
-        new_waveform_list.append(w)
-        for _ in range(3):
-            new_text_list.append(t)
-            new_label_list.append(l)
-    return new_waveform_list, new_label_list, new_text_list
 
 
 def apply_audio_resample(

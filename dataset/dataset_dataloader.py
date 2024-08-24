@@ -224,7 +224,7 @@ def get_waveform_ndarary(
             train=train,
             binary_label=bi_label,
             resample=resample,
-            resampel_rate=resample_rate,
+            resample_rate=resample_rate,
             concat_num=concat_num,
         )
     else:
@@ -272,7 +272,7 @@ def get_text_ndarray(
             train=train,
             binary_label=bi_label,
             resample=resample,
-            resampel_rate=resample_rate,
+            resample_rate=resample_rate,
             concat_num=concat_num,
         )
     else:
@@ -298,81 +298,33 @@ def get_text_ndarray(
 
 def get_raw_trimodal_ndarray_dataset(
     train: bool = True,
+    binary_label: bool = True,
+    resample: bool = True,
+    resample_rate: int = 8000,
+    concat_num: int = 3,
 ):
-    DATASET_RAW_DIR = "/public1/cjh/workspace/DepressionPrediction/dataset/EATD-Corpus"
-    TRAIN_DATASET_DIR = join(DATASET_RAW_DIR, "train")
-    VAL_DATASET_DIR = join(DATASET_RAW_DIR, "validation")
-    if train:
-        dir_list = os.listdir(TRAIN_DATASET_DIR)
-    else:
-        dir_list = os.listdir(VAL_DATASET_DIR)
-
-    dir_list = sorted(dir_list, key=int)
-    label_list = (
-        np.load(
-            "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/train/labels.npz"
-        )["arr_0"]
-        / 100
-        if train
-        else np.load(
-            "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray/test/labels.npz"
-        )["arr_0"]
-        / 100
-    )
-
-    waveform_list = []
-    text_list = []
-    for dir in dir_list:
-        SAMPLE_DIR = (
-            join(TRAIN_DATASET_DIR, dir) if train else join(VAL_DATASET_DIR, dir)
+    waveform_list, label_list, text_list = (
+        get_raw_waveform_text_label_with_argumentation(
+            train=train,
+            binary_label=binary_label,
+            resample=resample,
+            resample_rate=resample_rate,
+            concat_num=concat_num,
         )
-
-        waveform_1, _ = torchaudio.load(join(SAMPLE_DIR, "negative_out.wav"))
-        waveform_2, _ = torchaudio.load(join(SAMPLE_DIR, "neutral_out.wav"))
-        waveform_3, _ = torchaudio.load(join(SAMPLE_DIR, "positive_out.wav"))
-        if waveform_1.shape[0] > 1:
-            waveform_1 = waveform_1[0]
-        if waveform_2.shape[0] > 1:
-            waveform_2 = waveform_2[0]
-        if waveform_3.shape[0] > 1:
-            waveform_3 = waveform_3[0]
-
-        waveform_list += [waveform_1.numpy(), waveform_2.numpy(), waveform_3.numpy()]
-
-        with open(join(SAMPLE_DIR, "negative.txt")) as text_file:
-            text_1 = text_file.read()
-            text_list.append(text_1)
-
-        with open(join(SAMPLE_DIR, "neutral.txt")) as text_file:
-            text_2 = text_file.read()
-            text_list.append(text_2)
-
-        with open(join(SAMPLE_DIR, "positive.txt")) as text_file:
-            text_3 = text_file.read()
-            text_list.append(text_3)
-
-    # break
-
+    )
     # get train_datset and test_dataset
     if train:
-        (
-            waveform_list_train,
-            waveform_list_test,
-            text_list_train,
-            text_list_test,
-            label_train,
-            label_test,
-        ) = train_test_split(
+        return train_test_split(
             waveform_list, text_list, label_list, test_size=0.2, random_state=42
         )
-        return (
-            waveform_list_train,
-            waveform_list_test,
-            text_list_train,
-            text_list_test,
-            label_train,
-            label_test,
-        )
+        # return (
+        #     waveform_list_train,
+        #     waveform_list_test,
+        #     text_list_train,
+        #     text_list_test,
+        #     label_train,
+        #     label_test,
+        # )
 
     else:
         return waveform_list, text_list, label_list
@@ -409,10 +361,10 @@ if __name__ == "__main__":
     # X_train, y_train, X_test, y_test = get_text_ndarray(train=True, bi_label=True)
     # print(len(X_train))
 
-    X, y = get_text_ndarray(
-        train=False, bi_label=True, resample=True, resample_rate=8000, concat_num=3
-    )
-    print(len(X))
+    # X, y = get_text_ndarray(
+    #     train=False, bi_label=True, resample=True, resample_rate=8000, concat_num=3
+    # )
+    # print(len(X))
     # waveform_list_train, label_list_train, waveform_list_test, label_list_test = (
     #     get_waveform_ndarary(bi_label=True)
     # )
@@ -427,12 +379,12 @@ if __name__ == "__main__":
     #     get_text_ndarray()
     # )
     # print(len(text_list_train))
-    # (
-    #     waveform_list_train,
-    #     waveform_list_test,
-    #     text_list_train,
-    #     text_list_test,
-    #     label_train,
-    #     label_test,
-    # ) = get_raw_trimodal_ndarray_dataset()
-    # pass
+    (
+        waveform_list_train,
+        waveform_list_test,
+        text_list_train,
+        text_list_test,
+        label_train,
+        label_test,
+    ) = get_raw_trimodal_ndarray_dataset()
+    pass

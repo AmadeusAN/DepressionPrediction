@@ -27,7 +27,7 @@ visualize_train_dir = os.path.join(VISUALIZE_DIR, "train")
 visualize_val_dir = os.path.join(VISUALIZE_DIR, "val")
 save_model_name = "model_v1"  # 模型权重文件名称
 # SAVE_LOSS_NAME = ["mse_loss", "r2_score", "rmse_loss"]  # 用到的损失名称
-SAVE_LOSS_NAME = ["bce_loss"]
+SAVE_LOSS_NAME = ["bce_loss", "precision", "recall", "f1score"]
 BATCH_SIZE = 16
 START_LEARNING_RATE = 1e-4
 LR_MILESTONES = [10, 20, 30, 50, 80, 100, 200]
@@ -612,6 +612,9 @@ def test_single_modal(
 
 def train_fusion_model(
     model: torch.nn.Module = None,
+    binary_label: bool = True,
+    resample: bool = True,
+    resample_rate: int = 4000,
     load_epoch: int = 0,
     end_epoch: int = 100,
     save_interval: int = 10,
@@ -621,6 +624,19 @@ def train_fusion_model(
     visualize_val_dir: str = None,
     start_lr: float = 1e-4,
 ):
+    """对简易的融合模型进行训练
+
+    Args:
+        model (torch.nn.Module, optional): _description_. Defaults to None.
+        load_epoch (int, optional): _description_. Defaults to 0.
+        end_epoch (int, optional): _description_. Defaults to 100.
+        save_interval (int, optional): _description_. Defaults to 10.
+        checkpint_dir (str, optional): _description_. Defaults to None.
+        save_model_name (str, optional): _description_. Defaults to None.
+        visualize_train_dir (str, optional): _description_. Defaults to None.
+        visualize_val_dir (str, optional): _description_. Defaults to None.
+        start_lr (float, optional): _description_. Defaults to 1e-4.
+    """
     (
         waveform_list_train,
         waveform_list_test,
@@ -628,9 +644,15 @@ def train_fusion_model(
         text_list_test,
         label_train,
         label_test,
-    ) = get_raw_trimodal_ndarray_dataset()
+    ) = get_raw_trimodal_ndarray_dataset(
+        train=True,
+        binary_label=binary_label,
+        resample=resample,
+        resample_rate=resample_rate,
+        concat_num=3,
+    )
 
-    mse_loss_fn = torch.nn.MSELoss()
+    bce_loss_fn = torch.nn.BCEWithLogitsLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=start_lr)
     scheduler = MultiStepLR(optimizer=optimizer, milestones=LR_MILESTONES, gamma=0.1)
 
@@ -643,79 +665,117 @@ def train_fusion_model(
 
     model.to(device)
     model.train()
-    MSE_Loss = []
-    RMSE_Loss = []
-    VAL_MSE_Loss = []
-    VAL_RMSE_Loss = []
+    BCE_Loss = []
+    PRECISION_SCORE = []
+    RECALL_SCORE = []
+    F1_SCORE = []
+    VAL_BCE_Loss = []
+    VAL_PRECISION_SCORE = []
+    VAL_RECALL_SCORE = []
+    VAL_F1_SCORE = []
     cur_epoch = 0
 
     try:
         # main training logic
         size = len(waveform_list_train)
         for eph in range(load_epoch + 1, end_epoch + 1):
+            groundtruth = []
+            predict = []
             print(f"epoch:{eph} ", "*" * 100)
-            epoch_mse = 0.0
-            epoch_rmse = 0.0
+            epoch_bce = 0.0
             for index, (w, t, y) in enumerate(
                 zip(waveform_list_train, text_list_train, label_train)
             ):
+                groundtruth.append(1 if y == 1 else 0)
                 w, y = (
-                    torch.unsqueeze(torch.tensor(w).to(device), dim=0)
+                    (torch.unsqueeze(torch.tensor(w).to(device), dim=0))
+                    if not isinstance(w, torch.Tensor)
+                    else w.to(device)
                 ), torch.unsqueeze(torch.tensor(y).to(device), dim=0)
                 y_hat = model(w, t)
 
-                mse_loss = mse_loss_fn(y_hat, y)
-                rmse_loss = torch.sqrt(mse_loss)
-
-                mse_loss.backward()
+                predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
+                bce_loss = bce_loss_fn(y_hat, y)
+                bce_loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
 
                 # record loss
-                current, mse_loss, rmse_loss = (
-                    index + 1,
-                    mse_loss.item(),
-                    rmse_loss.item(),
-                )
-                epoch_mse += mse_loss
-                epoch_rmse += rmse_loss
-                print(
-                    f"mse_loss = {mse_loss:>6f},rmse_loss = {rmse_loss:>6f} ---[{current:>5d}/{size:>5d}]"
-                )
+                current = index + 1
+                bce_loss = bce_loss.item()
+                epoch_bce += bce_loss
+                print(f"bce_loss = {bce_loss:>12f} ---[{current:>5d}/{size:>5d}]")
 
-            epoch_mse /= size
-            epoch_rmse /= size
-            MSE_Loss.append(epoch_mse)
-            RMSE_Loss.append(epoch_rmse)
-            print(f"train mse_lost = {epoch_mse:>12f}, rmse_loss = {epoch_rmse:>12f}")
+            epoch_bce /= size
+
+            BCE_Loss.append(epoch_bce)
+            print(f"train bce_loss = {epoch_bce:>12f}")
+
+            # 进行分类计算
+            y_pred = np.array(predict)
+            y_true = np.array(groundtruth)
+            p = precision_score(y_true, y_pred, average="binary")
+            r = recall_score(y_true, y_pred, average="binary")
+            f1 = f1_score(y_true, y_pred, average="binary")
+            PRECISION_SCORE.append(p)
+            RECALL_SCORE.append(r)
+            F1_SCORE.append(f1)
+            print(f"train precision = {p}, recall = {r}, f1score = {f1}")
+
             scheduler.step()
             # ===============================================================================================================================
             # validation logic
             model.eval()
             num_batches = len(waveform_list_test)
-            (
-                val_mse_loss,
-                val_rmse_loss,
-            ) = (0.0, 0.0)
+            val_bce_loss = 0.0
+            predict = []
+            groundtruth = []
             with torch.no_grad():
                 for w, t, y in zip(waveform_list_test, text_list_test, label_test):
+                    groundtruth.append(1 if y == 1 else 0)
                     w, y = (
                         torch.unsqueeze(torch.tensor(w).to(device), dim=0)
+                        if not isinstance(w, torch.Tensor)
+                        else w.to(device)
                     ), torch.unsqueeze(torch.tensor(y).to(device), dim=0)
 
                     y_hat = model(w, t)
-                    mse_loss = mse_loss_fn(y_hat, y)
-                    rmse_loss = torch.sqrt(mse_loss)
+                    predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
+                    bce_loss = bce_loss_fn(y_hat, y)
 
-                    val_mse_loss += mse_loss.item()
-                    val_rmse_loss += rmse_loss.item()
-            val_mse_loss /= num_batches
-            val_rmse_loss /= num_batches
-            VAL_MSE_Loss.append(val_mse_loss)
-            VAL_RMSE_Loss.append(val_rmse_loss)
-            print(
-                f"val  mse_loss = {val_mse_loss:>12f}, rmse_loss = {val_rmse_loss:>12f}"
-            )
+                    val_bce_loss += bce_loss.item()
+            val_bce_loss /= num_batches
+            VAL_BCE_Loss.append(val_bce_loss)
+            print(f"val  bce_loss = {val_bce_loss:>12f}")
+
+            # 进行分类计算
+            y_pred = np.array(predict)
+            y_true = np.array(groundtruth)
+
+            # true positive
+            TP = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 1)))
+            print(f"TP = {TP}")
+
+            # false positive
+            FP = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 1)))
+            print(f"FP = {FP}")
+
+            # true negative
+            TN = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 0)))
+            print(f"TN = {TN}")
+
+            # false negative
+            FN = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 0)))
+            print(f"FN = {FN}")
+
+            p = precision_score(y_true, y_pred, average="binary")
+            r = recall_score(y_true, y_pred, average="binary")
+            f1score = f1_score(y_true, y_pred, average="binary")
+
+            VAL_PRECISION_SCORE.append(p)
+            VAL_RECALL_SCORE.append(r)
+            VAL_F1_SCORE.append(f1score)
+            print(f"precision = {p}, recall = {r}, f1score = {f1score}")
             model.train()
 
             # save model parameters each [save_interval] epochs
@@ -724,7 +784,6 @@ def train_fusion_model(
                     model.state_dict(),
                     os.path.join(checkpint_dir, save_model_name + f"_{str(eph)}"),
                 )
-
             cur_epoch = eph
 
     finally:
@@ -744,7 +803,7 @@ def train_fusion_model(
                     visualize_train_dir,
                     SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
                 ),
-                data=MSE_Loss,
+                data=BCE_Loss,
             )
 
             np.savez(
@@ -752,7 +811,23 @@ def train_fusion_model(
                     visualize_val_dir,
                     SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
                 ),
-                data=VAL_MSE_Loss,
+                data=VAL_BCE_Loss,
+            )
+
+            np.savez(
+                os.path.join(
+                    visualize_train_dir,
+                    SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
+                ),
+                data=PRECISION_SCORE,
+            )
+
+            np.savez(
+                os.path.join(
+                    visualize_val_dir,
+                    SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
+                ),
+                data=VAL_PRECISION_SCORE,
             )
 
             np.savez(
@@ -760,7 +835,7 @@ def train_fusion_model(
                     visualize_train_dir,
                     SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
                 ),
-                data=RMSE_Loss,
+                data=RECALL_SCORE,
             )
 
             np.savez(
@@ -768,7 +843,23 @@ def train_fusion_model(
                     visualize_val_dir,
                     SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
                 ),
-                data=VAL_RMSE_Loss,
+                data=VAL_RECALL_SCORE,
+            )
+
+            np.savez(
+                os.path.join(
+                    visualize_train_dir,
+                    SAVE_LOSS_NAME[3] + f"_epoch_to_{str(cur_epoch)}",
+                ),
+                data=F1_SCORE,
+            )
+
+            np.savez(
+                os.path.join(
+                    visualize_val_dir,
+                    SAVE_LOSS_NAME[3] + f"_epoch_to_{str(cur_epoch)}",
+                ),
+                data=VAL_F1_SCORE,
             )
 
             print(f"save success")
@@ -875,8 +966,8 @@ if __name__ == "__main__":
     # # load Wav2Vec
     # model = Wav2VecModel()
 
-    # load SentenceTransformer
-    model = SentenceTransformerModel(device=device)
+    # # load SentenceTransformer
+    # model = SentenceTransformerModel(device=device)
 
     # train_single_modal(
     #     model=model,
@@ -895,31 +986,34 @@ if __name__ == "__main__":
     #     start_lr=1e-3,
     # )
 
-    test_single_modal(
-        model=model,
-        text_path=True,
-        bi_label=True,
-        resample=True,
-        resample_rate=8000,
-        concat_num=3,
-        load_epoch=30,
-        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/SentenceTransformer_resample_dataarguementation",
-        save_model_name="SentenceTransformer_resample_dataarguementation",
-    )
+    # test_single_modal(
+    #     model=model,
+    #     text_path=True,
+    #     bi_label=True,
+    #     resample=True,
+    #     resample_rate=8000,
+    #     concat_num=3,
+    #     load_epoch=30,
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/SentenceTransformer_resample_dataarguementation",
+    #     save_model_name="SentenceTransformer_resample_dataarguementation",
+    # )
 
     # load fusion model
-    # model = SimpleFusionModel(device=device)
-    # train_fusion_model(
-    #     model=model,
-    #     load_epoch=0,
-    #     end_epoch=100,
-    #     save_interval=20,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/fusion_model",
-    #     save_model_name="fusion_model",
-    #     visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/fusion_model",
-    #     visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/fusion_model",
-    #     start_lr=1e-3,
-    # )
+    model = SimpleFusionModel(device=device)
+    train_fusion_model(
+        model=model,
+        binary_label=True,
+        resample=True,
+        resample_rate=4000,
+        load_epoch=0,
+        end_epoch=100,
+        save_interval=1,
+        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/fusion_model_resample_argumentation",
+        save_model_name="fusion_model_resample_argumentation",
+        visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/fusion_model_resample_argumentation",
+        visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/fusion_model_resample_argumentation",
+        start_lr=1e-3,
+    )
 
     # test_fusion_model(
     #     model=model,
