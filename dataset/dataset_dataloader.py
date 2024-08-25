@@ -221,7 +221,6 @@ def get_waveform_ndarary(
 
     if train:
         waveform_list, label_list, _ = get_raw_waveform_text_label_with_argumentation(
-            train=train,
             binary_label=bi_label,
             resample=resample,
             resample_rate=resample_rate,
@@ -303,15 +302,24 @@ def get_raw_trimodal_ndarray_dataset(
     resample_rate: int = 8000,
     concat_num: int = 3,
 ):
-    waveform_list, label_list, text_list = (
-        get_raw_waveform_text_label_with_argumentation(
-            train=train,
+    if train:
+        waveform_list, label_list, text_list = (
+            get_raw_waveform_text_label_with_argumentation(
+                binary_label=binary_label,
+                resample=resample,
+                resample_rate=resample_rate,
+                concat_num=concat_num,
+            )
+        )
+    else:
+        waveform_list, label_list, text_list, _ = get_raw_waveform_text_label(
+            train=False,
             binary_label=binary_label,
+            concat_num=concat_num,
             resample=resample,
             resample_rate=resample_rate,
-            concat_num=concat_num,
         )
-    )
+
     # get train_datset and test_dataset
     if train:
         return train_test_split(

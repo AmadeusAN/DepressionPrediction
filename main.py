@@ -8,6 +8,7 @@ from dataset.dataset_dataloader import (
     get_text_ndarray,
     get_raw_trimodal_ndarray_dataset,
 )
+from dataset.data_preprocess import get_raw_waveform_text_label
 from model.fusion_model import Model
 from model.component.output_module.linear_output import LinearOutput
 from torch.optim.lr_scheduler import MultiStepLR
@@ -25,6 +26,7 @@ checkpint_dir = os.path.join(SOR_DIR, "checkpoint")  # 模型权重保存目录
 VISUALIZE_DIR = os.path.join(SOR_DIR, "visualize")  # 损失数据保存目录
 visualize_train_dir = os.path.join(VISUALIZE_DIR, "train")
 visualize_val_dir = os.path.join(VISUALIZE_DIR, "val")
+visualize_test_dir = os.path.join(VISUALIZE_DIR, "test")
 save_model_name = "model_v1"  # 模型权重文件名称
 # SAVE_LOSS_NAME = ["mse_loss", "r2_score", "rmse_loss"]  # 用到的损失名称
 SAVE_LOSS_NAME = ["bce_loss", "precision", "recall", "f1score"]
@@ -37,14 +39,6 @@ device = (
     if torch.cuda.is_available()
     else "mps" if torch.backends.mps.is_available() else "cpu"
 )
-
-
-def r2_loss_fn(output, target):
-    target_mean = torch.mean(target)
-    ss_tot = torch.sum((target - target_mean) ** 2)
-    ss_res = torch.sum((target - output) ** 2)
-    r2 = 1 - ss_res / ss_tot
-    return r2
 
 
 def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
@@ -246,8 +240,6 @@ def train_single_modal(
     save_interval: int = 10,
     checkpint_dir: str = None,
     save_model_name: str = None,
-    visualize_train_dir: str = None,
-    visualize_val_dir: str = None,
     start_lr: float = 1e-4,
 ):
     """
@@ -294,11 +286,14 @@ def train_single_modal(
 
     model.to(device)
     model.train()
-    # MSE_Loss = []
-    # RMSE_Loss = []
     BCE_Loss = []
-    # VAL_MSE_Loss = []
-    # VAL_RMSE_Loss = []
+    PRECISION_SCORE = []
+    RECALL_SCORE = []
+    F1_SCORE = []
+    VAL_BCE_Loss = []
+    VAL_PRECISION_SCORE = []
+    VAL_RECALL_SCORE = []
+    VAL_F1_SCORE = []
     VAL_BCE_Loss = []
     cur_epoch = 0
 
@@ -306,66 +301,58 @@ def train_single_modal(
         # main training logic
         size = len(data_list_train)
         for eph in range(load_epoch + 1, end_epoch + 1):
+            groundtruth = []
+            predict = []
             print(f"epoch:{eph} ", "*" * 100)
-            # epoch_mse = 0.0
-            # epoch_rmse = 0.0
             epoch_bce = 0.0
             for index, (x, y) in enumerate(zip(data_list_train, label_list_train)):
+                groundtruth.append(1 if y == 1 else 0)
                 if not text_path:
-                    x = torch.unsqueeze(torch.tensor(x).to(device), dim=0)
-                # x, y = (
-                #     torch.unsqueeze(torch.tensor(x).to(device), dim=0)
-                #     if not isinstance(x, torch.Tensor)
-                #     else x.to(device) if not text_path else x
-                # ),
+                    x = (
+                        torch.unsqueeze(torch.tensor(x).to(device), dim=0)
+                        if not isinstance(x, torch.Tensor)
+                        else x.to(device)
+                    )
                 y = torch.unsqueeze(
                     torch.tensor(y, dtype=torch.float32).to(device), dim=0
                 )
                 y_hat = model(x)
 
-                # mse_loss = mse_loss_fn(y_hat, y)
-                # rmse_loss = torch.sqrt(mse_loss)
+                predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
                 bce_loss = bce_loss_fn(
                     torch.unsqueeze(y_hat, dim=0) if text_path else y_hat, y
                 )
 
-                # mse_loss.backward()
                 bce_loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
 
                 # record loss
                 current = index + 1
-                # mse_loss, rmse_loss = (
-                #     mse_loss.item(),
-                #     rmse_loss.item(),
-                # )
                 bce_loss = bce_loss.item()
-                # epoch_mse += mse_loss
-                # epoch_rmse += rmse_loss
                 epoch_bce += bce_loss
-                # print(
-                #     f"mse_loss = {mse_loss:>6f},rmse_loss = {rmse_loss:>6f} ---[{current:>5d}/{size:>5d}]"
-                # )
                 print(f"bce_loss = {bce_loss:>12f}---[{current:>5d}/{size:>5d}]")
 
-            # epoch_mse /= len(data_list_train)
-            # epoch_rmse /= len(data_list_train)
             epoch_bce /= size
-            # MSE_Loss.append(epoch_mse)
-            # RMSE_Loss.append(epoch_rmse)
             BCE_Loss.append(epoch_bce)
-            # print(f"train mse_lost = {epoch_mse:>12f}, rmse_loss = {epoch_rmse:>12f}")
             print(f"train bce_lost = {epoch_bce:>12f}")
             scheduler.step()
+
+            # 进行分类计算
+            y_pred = np.array(predict)
+            y_true = np.array(groundtruth)
+            p = precision_score(y_true, y_pred, average="binary")
+            r = recall_score(y_true, y_pred, average="binary")
+            f1 = f1_score(y_true, y_pred, average="binary")
+            PRECISION_SCORE.append(p)
+            RECALL_SCORE.append(r)
+            F1_SCORE.append(f1)
+            print(f"train precision = {p}, recall = {r}, f1score = {f1}")
+
             # ===============================================================================================================================
             # validation logic
             model.eval()
             num_batches = len(data_list_val)
-            # (
-            #     val_mse_loss,
-            #     val_rmse_loss,
-            # ) = (0.0, 0.0)
             val_bce_loss = 0.0
             predict = []
             groundtruth = []
@@ -373,12 +360,11 @@ def train_single_modal(
                 for x, y in zip(data_list_val, label_list_val):
                     groundtruth.append(1 if y == 1 else 0)
                     if not text_path:
-                        x = torch.unsqueeze(torch.tensor(x).to(device), dim=0)
-                    # x, y = (
-                    #     torch.unsqueeze(torch.tensor(x).to(device), dim=0)
-                    #     if not isinstance(x, torch.Tensor)
-                    #     else x.to(device) if not text_path else x
-                    # ),
+                        x = (
+                            torch.unsqueeze(torch.tensor(x).to(device), dim=0)
+                            if not isinstance(x, torch.Tensor)
+                            else x.to(device)
+                        )
                     y = torch.unsqueeze(
                         torch.tensor(y, dtype=torch.float32).to(device), dim=0
                     )
@@ -386,24 +372,13 @@ def train_single_modal(
                     y_hat = model(x)
 
                     predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
-                    # mse_loss = mse_loss_fn(y_hat, y)
-                    # rmse_loss = torch.sqrt(mse_loss)
                     bce_loss = bce_loss_fn(
                         torch.unsqueeze(y_hat, dim=0) if text_path else y_hat, y
                     )
 
-                    # val_mse_loss += mse_loss.item()
-                    # val_rmse_loss += rmse_loss.item()
                     val_bce_loss += bce_loss.item()
-            # val_mse_loss /= num_batches
-            # val_rmse_loss /= num_batches
             val_bce_loss /= num_batches
-            # VAL_MSE_Loss.append(val_mse_loss)
-            # VAL_RMSE_Loss.append(val_rmse_loss)
             VAL_BCE_Loss.append(val_bce_loss)
-            # print(
-            #     f"val  mse_loss = {val_mse_loss:>12f}, rmse_loss = {val_rmse_loss:>12f}"
-            # )
             print(f"val  bce_loss = {val_bce_loss:>12f}")
 
             # 进行分类计算
@@ -430,6 +405,9 @@ def train_single_modal(
             r = recall_score(y_true, y_pred, average="binary")
             f1score = f1_score(y_true, y_pred, average="binary")
 
+            VAL_PRECISION_SCORE.append(p)
+            VAL_RECALL_SCORE.append(r)
+            VAL_F1_SCORE.append(f1score)
             print(f"precision = {p}, recall = {r}, f1score = {f1score}")
             model.train()
 
@@ -454,9 +432,18 @@ def train_single_modal(
             if not os.path.exists(visualize_val_dir):
                 os.mkdir(visualize_val_dir)
 
+            train_loss_save_dir = os.path.join(visualize_train_dir, save_model_name)
+            val_loss_save_dir = os.path.join(visualize_val_dir, save_model_name)
+
+            if not os.path.exists(train_loss_save_dir):
+                os.mkdir(train_loss_save_dir)
+
+            if not os.path.exists(val_loss_save_dir):
+                os.mkdir(val_loss_save_dir)
+
             np.savez(
                 os.path.join(
-                    visualize_train_dir,
+                    train_loss_save_dir,
                     SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
                 ),
                 data=BCE_Loss,
@@ -464,43 +451,59 @@ def train_single_modal(
 
             np.savez(
                 os.path.join(
-                    visualize_val_dir,
+                    val_loss_save_dir,
                     SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
                 ),
                 data=VAL_BCE_Loss,
             )
 
-            # np.savez(
-            #     os.path.join(
-            #         visualize_train_dir,
-            #         SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
-            #     ),
-            #     data=MSE_Loss,
-            # )
+            np.savez(
+                os.path.join(
+                    train_loss_save_dir,
+                    SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
+                ),
+                data=PRECISION_SCORE,
+            )
 
-            # np.savez(
-            #     os.path.join(
-            #         visualize_val_dir,
-            #         SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
-            #     ),
-            #     data=VAL_MSE_Loss,
-            # )
+            np.savez(
+                os.path.join(
+                    val_loss_save_dir,
+                    SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
+                ),
+                data=VAL_PRECISION_SCORE,
+            )
 
-            # np.savez(
-            #     os.path.join(
-            #         visualize_train_dir,
-            #         SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
-            #     ),
-            #     data=RMSE_Loss,
-            # )
+            np.savez(
+                os.path.join(
+                    train_loss_save_dir,
+                    SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
+                ),
+                data=RECALL_SCORE,
+            )
 
-            # np.savez(
-            #     os.path.join(
-            #         visualize_val_dir,
-            #         SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
-            #     ),
-            #     data=VAL_RMSE_Loss,
-            # )
+            np.savez(
+                os.path.join(
+                    val_loss_save_dir,
+                    SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
+                ),
+                data=VAL_RECALL_SCORE,
+            )
+
+            np.savez(
+                os.path.join(
+                    train_loss_save_dir,
+                    SAVE_LOSS_NAME[3] + f"_epoch_to_{str(cur_epoch)}",
+                ),
+                data=F1_SCORE,
+            )
+
+            np.savez(
+                os.path.join(
+                    val_loss_save_dir,
+                    SAVE_LOSS_NAME[3] + f"_epoch_to_{str(cur_epoch)}",
+                ),
+                data=VAL_F1_SCORE,
+            )
 
             print(f"save success")
         else:
@@ -514,7 +517,7 @@ def test_single_modal(
     resample: bool = True,
     resample_rate: int = 8000,
     concat_num: int = 3,
-    load_epoch: int = 0,
+    to_epoch: int = 0,
     checkpint_dir: str = None,
     save_model_name: str = None,
 ):
@@ -538,76 +541,124 @@ def test_single_modal(
         )
     )
     dataset_len = len(data_list_test)
-    # mse_loss_fn = torch.nn.BCEWithLogitsLoss()
     bce_loss_fn = torch.nn.BCEWithLogitsLoss()
-    # (
-    #     test_mse_loss,
-    #     test_rmse_loss,
-    # ) = (0.0, 0.0)
-    test_bce_loss = 0.0
-    predict = []
-    groundtruth = []
+    BCE_Loss = []
+    PRECISION_SCORE = []
+    RECALL_SCORE = []
+    F1_SCORE = []
 
-    model.load_state_dict(
-        torch.load(os.path.join(checkpint_dir, save_model_name + f"_{load_epoch}"))
-    )
-    print(f"parameters loaded")
-    model.to(device)
-    model.eval()
-    with torch.no_grad():
-        for x, y in zip(data_list_test, label_list_test):
+    for cur_epoch in range(to_epoch):
+        test_bce_loss = 0.0
 
-            groundtruth.append(1 if y == 1 else 0)
+        predict = []
+        groundtruth = []
 
-            x, y = (
-                x if text_path else torch.unsqueeze(torch.tensor(x), dim=0).to(device)
-            ), torch.unsqueeze(torch.tensor(y, dtype=torch.float32).to(device), dim=0)
-
-            y_hat = model(x)
-
-            predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
-
-            bce_loss = bce_loss_fn(
-                torch.unsqueeze(y_hat, dim=0) if text_path else y_hat, y
+        model.load_state_dict(
+            torch.load(
+                os.path.join(checkpint_dir, save_model_name + f"_{cur_epoch + 1}")
             )
-            test_bce_loss += bce_loss.item()
-            # mse_loss = mse_loss_fn(y_hat, y)
-            # rmse_loss = torch.sqrt(mse_loss)
-            # test_mse_loss += mse_loss.item()
-            # test_rmse_loss += rmse_loss.item()
-        # test_mse_loss /= dataset_len
-        # test_rmse_loss /= dataset_len
-        test_bce_loss /= dataset_len
-        # print(
-        #     f"test  mse_loss = {test_mse_loss:>12f}, rmse_loss = {test_rmse_loss:>12f}"
-        # )
-        print(f"test  bce_loss = {test_bce_loss:>12f}")
+        )
+        print(f"parameters loaded")
+        model.to(device)
+        model.eval()
+        with torch.no_grad():
+            for x, y in zip(data_list_test, label_list_test):
 
-    # 进行分类计算
-    y_pred = np.array(predict)
-    y_true = np.array(groundtruth)
+                groundtruth.append(1 if y == 1 else 0)
 
-    # true positive
-    TP = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 1)))
-    print(f"TP = {TP}")
+                x, y = (
+                    x
+                    if text_path
+                    else torch.unsqueeze(torch.tensor(x), dim=0).to(device)
+                ), torch.unsqueeze(
+                    torch.tensor(y, dtype=torch.float32).to(device), dim=0
+                )
 
-    # false positive
-    FP = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 1)))
-    print(f"FP = {FP}")
+                y_hat = model(x)
 
-    # true negative
-    TN = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 0)))
-    print(f"TN = {TN}")
+                predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
 
-    # false negative
-    FN = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 0)))
-    print(f"FN = {FN}")
+                bce_loss = bce_loss_fn(
+                    torch.unsqueeze(y_hat, dim=0) if text_path else y_hat, y
+                )
+                test_bce_loss += bce_loss.item()
+            test_bce_loss /= dataset_len
+            print(f"test  bce_loss = {test_bce_loss:>12f}")
+            BCE_Loss.append(test_bce_loss)
 
-    p = precision_score(y_true, y_pred, average="binary")
-    r = recall_score(y_true, y_pred, average="binary")
-    f1score = f1_score(y_true, y_pred, average="binary")
+        # 进行分类计算
+        y_pred = np.array(predict)
+        y_true = np.array(groundtruth)
 
-    print(f"precision = {p}, recall = {r}, f1score = {f1score}")
+        # true positive
+        TP = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 1)))
+        print(f"TP = {TP}")
+
+        # false positive
+        FP = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 1)))
+        print(f"FP = {FP}")
+
+        # true negative
+        TN = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 0)))
+        print(f"TN = {TN}")
+
+        # false negative
+        FN = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 0)))
+        print(f"FN = {FN}")
+
+        p = precision_score(y_true, y_pred, average="binary")
+        r = recall_score(y_true, y_pred, average="binary")
+        f1score = f1_score(y_true, y_pred, average="binary")
+
+        print(
+            f"epoch: {cur_epoch + 1} : precision = {p}, recall = {r}, f1score = {f1score}"
+        )
+        PRECISION_SCORE.append(p)
+        RECALL_SCORE.append(r)
+        F1_SCORE.append(f1score)
+
+    # save test loss
+    # 创建对应的损失文件夹
+    if not os.path.exists(visualize_test_dir):
+        os.mkdir(visualize_test_dir)
+
+    save_dir = os.path.join(visualize_test_dir, save_model_name)
+    if not os.path.exists(save_dir):
+        os.mkdir(save_dir)
+
+    np.savez(
+        os.path.join(
+            save_dir,
+            SAVE_LOSS_NAME[0] + f"_epoch_to_{str(to_epoch)}",
+        ),
+        data=BCE_Loss,
+    )
+
+    np.savez(
+        os.path.join(
+            save_dir,
+            SAVE_LOSS_NAME[1] + f"_epoch_to_{str(to_epoch)}",
+        ),
+        data=PRECISION_SCORE,
+    )
+
+    np.savez(
+        os.path.join(
+            save_dir,
+            SAVE_LOSS_NAME[2] + f"_epoch_to_{str(to_epoch)}",
+        ),
+        data=RECALL_SCORE,
+    )
+
+    np.savez(
+        os.path.join(
+            save_dir,
+            SAVE_LOSS_NAME[3] + f"_epoch_to_{str(to_epoch)}",
+        ),
+        data=F1_SCORE,
+    )
+
+    print(f"save success")
 
 
 def train_fusion_model(
@@ -620,8 +671,6 @@ def train_fusion_model(
     save_interval: int = 10,
     checkpint_dir: str = None,
     save_model_name: str = None,
-    visualize_train_dir: str = None,
-    visualize_val_dir: str = None,
     start_lr: float = 1e-4,
 ):
     """对简易的融合模型进行训练
@@ -710,6 +759,7 @@ def train_fusion_model(
 
             BCE_Loss.append(epoch_bce)
             print(f"train bce_loss = {epoch_bce:>12f}")
+            scheduler.step()
 
             # 进行分类计算
             y_pred = np.array(predict)
@@ -722,7 +772,6 @@ def train_fusion_model(
             F1_SCORE.append(f1)
             print(f"train precision = {p}, recall = {r}, f1score = {f1}")
 
-            scheduler.step()
             # ===============================================================================================================================
             # validation logic
             model.eval()
@@ -798,9 +847,18 @@ def train_fusion_model(
             if not os.path.exists(visualize_val_dir):
                 os.mkdir(visualize_val_dir)
 
+            train_loss_save_dir = os.path.join(visualize_train_dir, save_model_name)
+            val_loss_save_dir = os.path.join(visualize_val_dir, save_model_name)
+
+            if not os.path.exists(train_loss_save_dir):
+                os.mkdir(train_loss_save_dir)
+
+            if not os.path.exists(val_loss_save_dir):
+                os.mkdir(val_loss_save_dir)
+
             np.savez(
                 os.path.join(
-                    visualize_train_dir,
+                    train_loss_save_dir,
                     SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
                 ),
                 data=BCE_Loss,
@@ -808,7 +866,7 @@ def train_fusion_model(
 
             np.savez(
                 os.path.join(
-                    visualize_val_dir,
+                    val_loss_save_dir,
                     SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
                 ),
                 data=VAL_BCE_Loss,
@@ -816,7 +874,7 @@ def train_fusion_model(
 
             np.savez(
                 os.path.join(
-                    visualize_train_dir,
+                    train_loss_save_dir,
                     SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
                 ),
                 data=PRECISION_SCORE,
@@ -824,7 +882,7 @@ def train_fusion_model(
 
             np.savez(
                 os.path.join(
-                    visualize_val_dir,
+                    val_loss_save_dir,
                     SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
                 ),
                 data=VAL_PRECISION_SCORE,
@@ -832,7 +890,7 @@ def train_fusion_model(
 
             np.savez(
                 os.path.join(
-                    visualize_train_dir,
+                    train_loss_save_dir,
                     SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
                 ),
                 data=RECALL_SCORE,
@@ -840,7 +898,7 @@ def train_fusion_model(
 
             np.savez(
                 os.path.join(
-                    visualize_val_dir,
+                    val_loss_save_dir,
                     SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
                 ),
                 data=VAL_RECALL_SCORE,
@@ -848,7 +906,7 @@ def train_fusion_model(
 
             np.savez(
                 os.path.join(
-                    visualize_train_dir,
+                    train_loss_save_dir,
                     SAVE_LOSS_NAME[3] + f"_epoch_to_{str(cur_epoch)}",
                 ),
                 data=F1_SCORE,
@@ -856,7 +914,7 @@ def train_fusion_model(
 
             np.savez(
                 os.path.join(
-                    visualize_val_dir,
+                    val_loss_save_dir,
                     SAVE_LOSS_NAME[3] + f"_epoch_to_{str(cur_epoch)}",
                 ),
                 data=VAL_F1_SCORE,
@@ -869,73 +927,136 @@ def train_fusion_model(
 
 def test_fusion_model(
     model: nn.Module = None,
-    load_epoch: int = 0,
+    binary_label: bool = True,
+    resample: bool = True,
+    resample_rate: int = 4000,
+    to_epoch: int = 0,
     checkpint_dir: str = None,
     save_model_name: str = None,
 ):
     print(f"use {device}")
-    waveform_list, text_list, label_list = get_raw_trimodal_ndarray_dataset(train=False)
-    dataset_len = len(waveform_list)
-    mse_loss_fn = torch.nn.MSELoss()
-    (
-        test_mse_loss,
-        test_rmse_loss,
-    ) = (0.0, 0.0)
-    predict = []
-    groundtruth = []
-
-    model.load_state_dict(
-        torch.load(os.path.join(checkpint_dir, save_model_name + f"_{load_epoch}"))
+    waveform_list, text_list, label_list = get_raw_trimodal_ndarray_dataset(
+        train=False,
+        binary_label=binary_label,
+        resample=resample,
+        resample_rate=resample_rate,
     )
-    print(f"parameters loaded")
-    model.to(device)
-    model.eval()
-    with torch.no_grad():
-        for w, t, y in zip(waveform_list, text_list, label_list):
 
-            groundtruth.append(1 if y >= 0.53 else 0)
+    dataset_len = len(waveform_list)
+    bce_loss_fn = torch.nn.BCEWithLogitsLoss()
+    BCE_Loss = []
+    PRECISION_SCORE = []
+    RECALL_SCORE = []
+    F1_SCORE = []
 
-            w = torch.tensor(w).to(device)
-            y = torch.unsqueeze(torch.tensor(y).to(device), dim=0)
-
-            y_hat = model(w, t)
-
-            predict.append(1 if y_hat.item() >= 0.53 else 0)
-            mse_loss = mse_loss_fn(y_hat, y)
-            rmse_loss = torch.sqrt(mse_loss)
-            test_mse_loss += mse_loss.item()
-            test_rmse_loss += rmse_loss.item()
-        test_mse_loss /= dataset_len
-        test_rmse_loss /= dataset_len
-        print(
-            f"test  mse_loss = {test_mse_loss:>12f}, rmse_loss = {test_rmse_loss:>12f}"
+    for cur_epoch in range(to_epoch):
+        test_bce_loss = 0.0
+        predict = []
+        groundtruth = []
+        model.load_state_dict(
+            torch.load(
+                os.path.join(checkpint_dir, save_model_name + f"_{cur_epoch + 1}")
+            )
         )
+        print(f"parameters loaded")
+        model.to(device)
+        model.eval()
+        with torch.no_grad():
+            for w, t, y in zip(waveform_list, text_list, label_list):
 
-    # 进行分类计算
-    y_pred = np.array(predict)
-    y_true = np.array(groundtruth)
+                groundtruth.append(1 if y == 1 else 0)
 
-    # true positive
-    TP = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 1)))
-    print(f"TP = {TP}")
+                w = (
+                    torch.unsqueeze(torch.tensor(w), dim=0).to(device)
+                    if not isinstance(w, torch.Tensor)
+                    else w.to(device)
+                )
+                y = torch.unsqueeze(torch.tensor(y).to(device), dim=0)
 
-    # false positive
-    FP = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 1)))
-    print(f"FP = {FP}")
+                y_hat = model(w, t)
 
-    # true negative
-    TN = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 0)))
-    print(f"TN = {TN}")
+                predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
 
-    # false negative
-    FN = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 0)))
-    print(f"FN = {FN}")
+                bce_loss = bce_loss_fn(y_hat, y)
+                test_bce_loss += bce_loss.item()
+            test_bce_loss /= dataset_len
+            # print(
+            #     f"test  mse_loss = {test_mse_loss:>12f}, rmse_loss = {test_rmse_loss:>12f}"
+            # )
+            print(f"test  bce_loss = {test_bce_loss:>12f}")
+            BCE_Loss.append(test_bce_loss.item())
 
-    p = precision_score(y_true, y_pred, average="binary")
-    r = recall_score(y_true, y_pred, average="binary")
-    f1score = f1_score(y_true, y_pred, average="binary")
+        # 进行分类计算
+        y_pred = np.array(predict)
+        y_true = np.array(groundtruth)
 
-    print(f"precision = {p}, recall = {r}, f1score = {f1score}")
+        # true positive
+        TP = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 1)))
+        print(f"TP = {TP}")
+
+        # false positive
+        FP = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 1)))
+        print(f"FP = {FP}")
+
+        # true negative
+        TN = np.sum(np.logical_and(np.equal(y_true, 0), np.equal(y_pred, 0)))
+        print(f"TN = {TN}")
+
+        # false negative
+        FN = np.sum(np.logical_and(np.equal(y_true, 1), np.equal(y_pred, 0)))
+        print(f"FN = {FN}")
+
+        p = precision_score(y_true, y_pred, average="binary")
+        r = recall_score(y_true, y_pred, average="binary")
+        f1score = f1_score(y_true, y_pred, average="binary")
+
+        print(f"precision = {p}, recall = {r}, f1score = {f1score}")
+        PRECISION_SCORE.append(p)
+        RECALL_SCORE.append(r)
+        F1_SCORE.append(f1score)
+
+    # save test loss
+    # 创建对应的损失文件夹
+    if not os.path.exists(visualize_test_dir):
+        os.mkdir(visualize_test_dir)
+
+    save_dir = os.path.join(visualize_test_dir, save_model_name)
+    if not os.path.exists(save_dir):
+        os.mkdir(save_dir)
+
+    np.savez(
+        os.path.join(
+            save_dir,
+            SAVE_LOSS_NAME[0] + f"_epoch_to_{str(to_epoch)}",
+        ),
+        data=BCE_Loss,
+    )
+
+    np.savez(
+        os.path.join(
+            save_dir,
+            SAVE_LOSS_NAME[1] + f"_epoch_to_{str(to_epoch)}",
+        ),
+        data=PRECISION_SCORE,
+    )
+
+    np.savez(
+        os.path.join(
+            save_dir,
+            SAVE_LOSS_NAME[2] + f"_epoch_to_{str(to_epoch)}",
+        ),
+        data=RECALL_SCORE,
+    )
+
+    np.savez(
+        os.path.join(
+            save_dir,
+            SAVE_LOSS_NAME[3] + f"_epoch_to_{str(to_epoch)}",
+        ),
+        data=F1_SCORE,
+    )
+
+    print(f"save success")
 
 
 if __name__ == "__main__":
@@ -963,61 +1084,60 @@ if __name__ == "__main__":
     #     kernel_num=[32, 64, 128, 256, 256, 256],
     # )
 
-    # # load Wav2Vec
-    # model = Wav2VecModel()
+    # load Wav2Vec
+    model = Wav2VecModel()
 
     # # load SentenceTransformer
     # model = SentenceTransformerModel(device=device)
 
     # train_single_modal(
     #     model=model,
-    #     text_path=True,
+    #     text_path=False,
     #     bi_label=True,
     #     resample=True,
     #     resample_rate=8000,
     #     concat_num=3,
     #     load_epoch=0,
-    #     end_epoch=100,
-    #     save_interval=10,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/SentenceTransformer_resample_dataarguementation",
-    #     save_model_name="SentenceTransformer_resample_dataarguementation",
-    #     visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/SentenceTransformer_resample_dataarguementation",
-    #     visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/SentenceTransformer_resample_dataarguementation",
+    #     end_epoch=50,
+    #     save_interval=1,
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_resample_augmentation",
+    #     save_model_name="Wav2Vec_resample_augmentation",
     #     start_lr=1e-3,
     # )
 
-    # test_single_modal(
-    #     model=model,
-    #     text_path=True,
-    #     bi_label=True,
-    #     resample=True,
-    #     resample_rate=8000,
-    #     concat_num=3,
-    #     load_epoch=30,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/SentenceTransformer_resample_dataarguementation",
-    #     save_model_name="SentenceTransformer_resample_dataarguementation",
-    # )
-
-    # load fusion model
-    model = SimpleFusionModel(device=device)
-    train_fusion_model(
+    test_single_modal(
         model=model,
-        binary_label=True,
+        text_path=False,
+        bi_label=True,
         resample=True,
-        resample_rate=4000,
-        load_epoch=0,
-        end_epoch=100,
-        save_interval=1,
-        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/fusion_model_resample_argumentation",
-        save_model_name="fusion_model_resample_argumentation",
-        visualize_train_dir="/public1/cjh/workspace/DepressionPrediction/visualize/train/fusion_model_resample_argumentation",
-        visualize_val_dir="/public1/cjh/workspace/DepressionPrediction/visualize/val/fusion_model_resample_argumentation",
-        start_lr=1e-3,
+        resample_rate=8000,
+        concat_num=3,
+        to_epoch=50,
+        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_resample_augmentation",
+        save_model_name="Wav2Vec_resample_augmentation",
     )
+
+    # # load fusion model
+    # model = SimpleFusionModel(device=device)
+    # train_fusion_model(
+    #     model=model,
+    #     binary_label=True,
+    #     resample=True,
+    #     resample_rate=4000,
+    #     load_epoch=0,
+    #     end_epoch=50,
+    #     save_interval=1,
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/fusion_model_resample_augmentation",
+    #     save_model_name="fusion_model_resample_augmentation",
+    #     start_lr=1e-3,
+    # )
 
     # test_fusion_model(
     #     model=model,
-    #     load_epoch=20,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/fusion_model",
-    #     save_model_name="fusion_model",
+    #     binary_label=True,
+    #     resample=True,
+    #     resample_rate=4000,
+    #     to_epoch=50,
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/fusion_model_resample_augmentation",
+    #     save_model_name="fusion_model_resample_augmentation",
     # )

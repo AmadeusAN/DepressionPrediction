@@ -108,7 +108,6 @@ def get_raw_waveform_text_label(
 
 
 def get_raw_waveform_text_label_with_argumentation(
-    train: bool = True,
     binary_label: bool = True,
     resample: bool = True,
     resample_rate: int = 8000,
@@ -125,7 +124,7 @@ def get_raw_waveform_text_label_with_argumentation(
 
     Returns:
         _type_: _description_
-    
+
     Description:
         1. 随机增强数据集，增强包括：rir、noise、原数据集。
     """
@@ -133,7 +132,7 @@ def get_raw_waveform_text_label_with_argumentation(
     # 首先获取原始数据集
     waveform_list, label_list, text_list, sample_rate_list = (
         get_raw_waveform_text_label(
-            train=train,
+            train=True,
             binary_label=binary_label,
             resample=resample,
             resample_rate=resample_rate,
