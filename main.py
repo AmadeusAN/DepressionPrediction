@@ -7,6 +7,7 @@ from dataset.dataset_dataloader import (
     get_waveform_ndarary,
     get_text_ndarray,
     get_raw_trimodal_ndarray_dataset,
+    get_trimodal_dataloader,
 )
 from dataset.data_preprocess import get_raw_waveform_text_label
 from model.fusion_model import Model
@@ -30,12 +31,12 @@ visualize_test_dir = os.path.join(VISUALIZE_DIR, "test")
 save_model_name = "model_v1"  # 模型权重文件名称
 # SAVE_LOSS_NAME = ["mse_loss", "r2_score", "rmse_loss"]  # 用到的损失名称
 SAVE_LOSS_NAME = ["bce_loss", "precision", "recall", "f1score"]
-BATCH_SIZE = 16
+BATCH_SIZE = 1
 START_LEARNING_RATE = 1e-4
 LR_MILESTONES = [10, 20, 30, 50, 80, 100, 200]
 
 device = (
-    "cuda:1"
+    "cuda:0"
     if torch.cuda.is_available()
     else "mps" if torch.backends.mps.is_available() else "cpu"
 )
@@ -663,9 +664,7 @@ def test_single_modal(
 
 def train_fusion_model(
     model: torch.nn.Module = None,
-    binary_label: bool = True,
-    resample: bool = True,
-    resample_rate: int = 4000,
+    resample_rate: int = 8000,
     load_epoch: int = 0,
     end_epoch: int = 100,
     save_interval: int = 10,
@@ -686,19 +685,23 @@ def train_fusion_model(
         visualize_val_dir (str, optional): _description_. Defaults to None.
         start_lr (float, optional): _description_. Defaults to 1e-4.
     """
-    (
-        waveform_list_train,
-        waveform_list_test,
-        text_list_train,
-        text_list_test,
-        label_train,
-        label_test,
-    ) = get_raw_trimodal_ndarray_dataset(
-        train=True,
-        binary_label=binary_label,
-        resample=resample,
-        resample_rate=resample_rate,
-        concat_num=3,
+    # (
+    #     waveform_list_train,
+    #     waveform_list_test,
+    #     text_list_train,
+    #     text_list_test,
+    #     label_train,
+    #     label_test,
+    # ) = get_raw_trimodal_ndarray_dataset(
+    #     train=True,
+    #     binary_label=binary_label,
+    #     resample=resample,
+    #     resample_rate=resample_rate,
+    #     concat_num=3,
+    # )
+
+    train_dataloader, val_dataloader = get_trimodal_dataloader(
+        batch_size=BATCH_SIZE, resmaple_rate=resample_rate
     )
 
     bce_loss_fn = torch.nn.BCEWithLogitsLoss()
@@ -726,22 +729,20 @@ def train_fusion_model(
 
     try:
         # main training logic
-        size = len(waveform_list_train)
+        size = len(train_dataloader)
         for eph in range(load_epoch + 1, end_epoch + 1):
             groundtruth = []
             predict = []
             print(f"epoch:{eph} ", "*" * 100)
             epoch_bce = 0.0
-            for index, (w, t, y) in enumerate(
-                zip(waveform_list_train, text_list_train, label_train)
-            ):
+            for index, (w, t, y) in enumerate(train_dataloader):
                 groundtruth.append(1 if y == 1 else 0)
                 w, y = (
                     (torch.unsqueeze(torch.tensor(w).to(device), dim=0))
                     if not isinstance(w, torch.Tensor)
-                    else w.to(device)
-                ), torch.unsqueeze(torch.tensor(y).to(device), dim=0)
-                y_hat = model(w, t)
+                    else torch.squeeze(w, dim=0).to(device)
+                ), torch.unsqueeze(y, dim=0).to(device)
+                y_hat = model(w, t[0])
 
                 predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
                 bce_loss = bce_loss_fn(y_hat, y)
@@ -775,20 +776,20 @@ def train_fusion_model(
             # ===============================================================================================================================
             # validation logic
             model.eval()
-            num_batches = len(waveform_list_test)
+            num_batches = len(val_dataloader)
             val_bce_loss = 0.0
             predict = []
             groundtruth = []
             with torch.no_grad():
-                for w, t, y in zip(waveform_list_test, text_list_test, label_test):
+                for w, t, y in val_dataloader:
                     groundtruth.append(1 if y == 1 else 0)
                     w, y = (
                         torch.unsqueeze(torch.tensor(w).to(device), dim=0)
                         if not isinstance(w, torch.Tensor)
-                        else w.to(device)
-                    ), torch.unsqueeze(torch.tensor(y).to(device), dim=0)
+                        else torch.squeeze(w, dim=0).to(device)
+                    ), torch.unsqueeze(y, dim=0).to(device)
 
-                    y_hat = model(w, t)
+                    y_hat = model(w, t[0])
                     predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
                     bce_loss = bce_loss_fn(y_hat, y)
 
@@ -1084,15 +1085,15 @@ if __name__ == "__main__":
     #     kernel_num=[32, 64, 128, 256, 256, 256],
     # )
 
-    # load Wav2Vec
-    model = Wav2VecModel()
+    # # load Wav2Vec
+    # model = Wav2VecModel()
 
     # # load SentenceTransformer
     # model = SentenceTransformerModel(device=device)
 
     # train_single_modal(
     #     model=model,
-    #     text_path=False,
+    #     text_path=True,
     #     bi_label=True,
     #     resample=True,
     #     resample_rate=8000,
@@ -1100,37 +1101,35 @@ if __name__ == "__main__":
     #     load_epoch=0,
     #     end_epoch=50,
     #     save_interval=1,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_resample_augmentation",
-    #     save_model_name="Wav2Vec_resample_augmentation",
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/SentenceTransformer_resample_augementation",
+    #     save_model_name="SentenceTransformer_resample_augementation",
     #     start_lr=1e-3,
     # )
 
-    test_single_modal(
-        model=model,
-        text_path=False,
-        bi_label=True,
-        resample=True,
-        resample_rate=8000,
-        concat_num=3,
-        to_epoch=50,
-        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/Wav2Vec_resample_augmentation",
-        save_model_name="Wav2Vec_resample_augmentation",
-    )
-
-    # # load fusion model
-    # model = SimpleFusionModel(device=device)
-    # train_fusion_model(
+    # test_single_modal(
     #     model=model,
-    #     binary_label=True,
+    #     text_path=True,
+    #     bi_label=True,
     #     resample=True,
-    #     resample_rate=4000,
-    #     load_epoch=0,
-    #     end_epoch=50,
-    #     save_interval=1,
-    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/fusion_model_resample_augmentation",
-    #     save_model_name="fusion_model_resample_augmentation",
-    #     start_lr=1e-3,
+    #     resample_rate=8000,
+    #     concat_num=3,
+    #     to_epoch=50,
+    #     checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/SentenceTransformer_resample_augementation",
+    #     save_model_name="SentenceTransformer_resample_augementation",
     # )
+
+    # load fusion model
+    model = SimpleFusionModel(device=device)
+    train_fusion_model(
+        model=model,
+        resample_rate=8000,
+        load_epoch=0,
+        end_epoch=30,
+        save_interval=1,
+        checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/fusion_model_resample_augmentation",
+        save_model_name="fusion_model_resample_augmentation",
+        start_lr=1e-6,
+    )
 
     # test_fusion_model(
     #     model=model,

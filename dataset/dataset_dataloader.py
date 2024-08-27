@@ -13,6 +13,7 @@ sys.path.append(r"/public1/cjh/workspace/DepressionPrediction")
 from dataset.data_preprocess import (
     get_raw_waveform_text_label_with_argumentation,
     get_raw_waveform_text_label,
+    generate_train_val_dataset,
 )
 import torchaudio
 import os
@@ -26,113 +27,17 @@ NDARRAY_DIR = "/public1/cjh/workspace/DepressionPrediction/dataset/raw_ndarray"
 NDARRAY_TRAIN_DIR = join(NDARRAY_DIR, "train")
 
 
-class TriModalDataset(Dataset):
-    """元素顺序: e, t, w, l
-
-    Args:
-        Dataset (_type_): _description_
-    """
-
-    def __init__(
-        self,
-    ):
-        super(TriModalDataset, self).__init__()
-        self.emotion_np = np.load(join(NDARRAY_TRAIN_DIR, "emotion_hiddenvec_raw.npz"))[
-            "arr_0"
-        ]
-
-        self.text_np = np.load(join(NDARRAY_TRAIN_DIR, "text_raw.npz"))["arr_0"]
-        self.waveform_tf_np = np.load(join(NDARRAY_TRAIN_DIR, "waveform_tf_raw.npz"))[
-            "arr_0"
-        ]
-
-        self.label = np.load(join(NDARRAY_TRAIN_DIR, "labels.npz"))["arr_0"] / 100
-
-    def __len__(
-        self,
-    ):
-        return len(self.emotion_np)
-
-    def __getitem__(self, index):
-        return (
-            self.emotion_np[index],
-            self.text_np[index],
-            self.waveform_tf_np[index],
-            self.label[index],
-        )
-
-
-# def get_tri_train_val_dataloader(batch_size: int = 32):
-#     label_dataset = np.load(join(NDARRAY_TRAIN_DIR, "labels.npz"))["arr_0"]
-#     waveform_tf_dataset = WaveformTFDataset(label_dataset)
-#     emotion_hidd_vec_dataset = EmotinoHiddVecDataset(label_dataset)
-#     text_vec_dataset = TextVecDataset(label_dataset)
-
-#     waveform_tf_dataset_train, waveform_tf_dataset_test = torch.utils.data.random_split(
-#         waveform_tf_dataset, [0.8, 0.2], torch.Generator().manual_seed(42)
-#     )
-
-#     emotion_hidd_vec_dataset_train, emotion_hidd_vec_dataset_test = (
-#         torch.utils.data.random_split(
-#             emotion_hidd_vec_dataset, [0.8, 0.2], torch.Generator().manual_seed(42)
-#         )
-#     )
-
-#     text_vec_dataset_train, text_vec_dataset_test = torch.utils.data.random_split(
-#         text_vec_dataset, [0.8, 0.2], torch.Generator().manual_seed(42)
-#     )
-
-#     waveform_tf_train_dataloader = DataLoader(
-#         waveform_tf_dataset_train, batch_size=batch_size, shuffle=True
-#     )
-#     waveform_tf_test_dataloader = DataLoader(
-#         waveform_tf_dataset_test, batch_size=batch_size, shuffle=True
-#     )
-
-#     emotion_hidd_vec_train_dataloader = DataLoader(
-#         emotion_hidd_vec_dataset_train, batch_size=batch_size, shuffle=True
-#     )
-#     emotion_hidd_vec_test_dataloader = DataLoader(
-#         emotion_hidd_vec_dataset_test, batch_size=batch_size, shuffle=True
-#     )
-#     text_vec_train_dataloader = DataLoader(
-#         text_vec_dataset_train, batch_size=batch_size, shuffle=True
-#     )
-#     text_vec_test_dataloader = DataLoader(
-#         text_vec_dataset_test, batch_size=batch_size, shuffle=True
-#     )
-
-#     return (
-#         waveform_tf_train_dataloader,
-#         waveform_tf_test_dataloader,
-#         emotion_hidd_vec_train_dataloader,
-#         emotion_hidd_vec_test_dataloader,
-#         text_vec_train_dataloader,
-#         text_vec_test_dataloader,
-#     )
-
-
-def get_tri_modal_dataloader(batch_size: int = 32):
-    """该方法获得的训练集和验证集都是已经经过特征提取后的特征向量，没有原始数据
-
-    Args:
-        batch_size (int, optional): _description_. Defaults to 32.
-
-    Returns:
-        dataloader: 训练和验证
-    """
-    tri_modal_dataset = TriModalDataset()
-    tri_modal_dataset_train, tri_modal_dataset_test = torch.utils.data.random_split(
-        tri_modal_dataset, [0.8, 0.2], torch.Generator().manual_seed(42)
+def get_trimodal_dataloader(batch_size: int = 1, resmaple_rate: int = 8000):
+    train_dataset, val_dataset = generate_train_val_dataset(resample_rate=resmaple_rate)
+    return DataLoader(
+        dataset=train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+    ), DataLoader(
+        dataset=val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
     )
-
-    tri_modal_dataloader_train = DataLoader(
-        tri_modal_dataset_train, batch_size=batch_size, shuffle=True
-    )
-    tri_modal_dataloader_test = DataLoader(
-        tri_modal_dataset_test, batch_size=batch_size, shuffle=False
-    )
-    return tri_modal_dataloader_train, tri_modal_dataloader_test
 
 
 def get_waveform_ndarary(
@@ -249,8 +154,7 @@ def waveform_sample():
     """仅生成一个 waveform 音频数据，供单个网络进行测试用"""
     audio_path = r"/public1/cjh/workspace/DepressionPrediction/dataset/EATD-Corpus/train/1/positive_out.wav"
     wavefrom, _ = torchaudio.load(audio_path)
-    if wavefrom.shape[0] > 1:
-        wavefrom = wavefrom[0]
+    wavefrom = wavefrom[0]
     return torch.unsqueeze(wavefrom, dim=0)
 
 
@@ -268,7 +172,6 @@ def get_text_ndarray(
     """
     if train:
         _, label_list, text_list = get_raw_waveform_text_label_with_argumentation(
-            train=train,
             binary_label=bi_label,
             resample=resample,
             resample_rate=resample_rate,
@@ -387,12 +290,14 @@ if __name__ == "__main__":
     #     get_text_ndarray()
     # )
     # print(len(text_list_train))
-    (
-        waveform_list_train,
-        waveform_list_test,
-        text_list_train,
-        text_list_test,
-        label_train,
-        label_test,
-    ) = get_raw_trimodal_ndarray_dataset()
+    # (
+    #     waveform_list_train,
+    #     waveform_list_test,
+    #     text_list_train,
+    #     text_list_test,
+    #     label_train,
+    #     label_test,
+    # ) = get_raw_trimodal_ndarray_dataset()
+
+    train_dataloader, val_dataloader = get_trimodal_dataloader(batch_size=1)
     pass
