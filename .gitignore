@@ -11,4 +11,4 @@
 /visualize/train
 /visualize/test
 /visualize/val
-
+/tensorboard_logs
