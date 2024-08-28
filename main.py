@@ -18,8 +18,9 @@ from model.component.emotion_path.Wav2vec import Wav2VecModel
 from model.component.text_path.SentenceModel import SentenceTransformerModel
 from model.fusion_model import SimpleFusionModel
 from sklearn.metrics import precision_score, recall_score, f1_score
-
+from torch.utils.tensorboard import SummaryWriter  # 增加 tensorboard 支持。
 import sys
+
 
 # CUR = os.path.dirname(__file__)
 SOR_DIR = os.path.dirname(__file__)
@@ -41,192 +42,7 @@ device = (
     else "mps" if torch.backends.mps.is_available() else "cpu"
 )
 
-
-def main(load_epoch: int = 0, end_epoch: int = 100, save_interval: int = 20):
-    """
-    主要训练逻辑
-
-    :param save_interval: 每个{save_interval}个轮次保存一次模型权重。
-    :param load_epoch: 准备继续训练时加载的模型权重的轮次。
-    :param end_epoch:
-    :return:
-    """
-    print(f"use {device}")
-
-    train_dataloader, test_dataloader = dataset_dataloader.get_tri_modal_dataloader(
-        batch_size=BATCH_SIZE
-    )
-
-    # loading model
-    output_layer = LinearOutput()
-    model = Model(output_layers=output_layer)
-    mse_loss_fn = torch.nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=START_LEARNING_RATE)
-    scheduler = MultiStepLR(optimizer=optimizer, milestones=LR_MILESTONES, gamma=0.5)
-
-    # loading parameters
-    if load_epoch != 0:
-        model.load_state_dict(
-            torch.load(os.path.join(checkpint_dir, save_model_name + f"_{load_epoch}"))
-        )
-        print(f"parameters loaded")
-
-    model.to(device)
-    model.train()
-    MSE_Loss = []
-    R2_Score = []
-    RMSE_Loss = []
-    VAL_MSE_Loss = []
-    VAL_R2_Score = []
-    VAL_RMSE_Loss = []
-    cur_epoch = 0
-
-    try:
-        # main training logic
-        size = len(train_dataloader.dataset)
-        for eph in range(load_epoch + 1, end_epoch + 1):
-            print(f"epoch:{eph} ", "*" * 100)
-            epoch_loss = 0.0
-            epoch_r2 = 0.0
-            epoch_rmse = 0.0
-            for batch, (e, t, w, y) in enumerate(train_dataloader):
-                e, t, w, y = e.to(device), t.to(device), w.to(device), y.to(device)
-                y_hat = model(w, t, e)
-                mse_loss = mse_loss_fn(y_hat, y)
-                r2_score = r2_loss_fn(y_hat, y)
-                rmse_loss = torch.sqrt(mse_loss)
-                mse_loss.backward()
-                optimizer.step()
-                optimizer.zero_grad()
-
-                # record loss
-                current, mse_loss, r2_score, rmse_loss = (
-                    (batch + 1) * len(e),
-                    mse_loss.item(),
-                    r2_score.item(),
-                    rmse_loss.item(),
-                )
-                epoch_loss += mse_loss
-                epoch_r2 += r2_score
-                epoch_rmse += rmse_loss
-                print(
-                    f"mse_loss = {mse_loss:>6f},rmse_loss = {rmse_loss:>6f}, r2_score = {r2_score:>6f},---[{current:>5d}/{size:>5d}]"
-                )
-
-            epoch_loss /= len(train_dataloader)
-            epoch_r2 /= len(train_dataloader)
-            epoch_rmse /= len(train_dataloader)
-            MSE_Loss.append(epoch_loss)
-            R2_Score.append(epoch_r2)
-            RMSE_Loss.append(epoch_rmse)
-            print(
-                f"train mse_lost = {epoch_loss:>12f}, rmse_loss = {epoch_rmse:>12f}, r2 = {epoch_r2:>12f}"
-            )
-            scheduler.step()
-            # ===============================================================================================================================
-            # testing logic
-            model.eval()
-            num_batches = len(test_dataloader)
-            (
-                val_mse_loss,
-                val_r2_score,
-                val_rmse_loss,
-            ) = (0.0, 0.0, 0.0)
-            with torch.no_grad():
-                for e, t, w, y in test_dataloader:
-                    e, t, w, y = e.to(device), t.to(device), w.to(device), y.to(device)
-
-                    y_hat = model(w, t, e)
-                    mse_loss = mse_loss_fn(y_hat, y)
-                    r2_score = r2_loss_fn(y_hat, y)
-                    rmse_loss = torch.sqrt(mse_loss)
-
-                    val_mse_loss += mse_loss.item()
-                    val_r2_score += r2_score.item()
-                    val_rmse_loss += rmse_loss.item()
-            val_mse_loss /= num_batches
-            val_r2_score /= num_batches
-            val_rmse_loss /= num_batches
-            VAL_MSE_Loss.append(val_mse_loss)
-            VAL_R2_Score.append(val_r2_score)
-            VAL_RMSE_Loss.append(val_rmse_loss)
-            print(
-                f"val  mse_loss = {val_mse_loss:>12f}, rmse_loss = {val_rmse_loss:>12f}, r2 = {val_r2_score:>12f}"
-            )
-            model.train()
-
-            # save model parameters each [save_interval] epochs
-            if eph % save_interval == 0:
-                torch.save(
-                    model.state_dict(),
-                    os.path.join(checkpint_dir, save_model_name + f"_{str(eph)}"),
-                )
-
-            cur_epoch = eph
-
-    finally:
-        print(f"Are you sure to save loss data? [y/n]")
-        y = input()
-        if y == "y" or y == "Y":
-            print(f"saving loss data" + "*" * 20)
-
-            # 创建对应的损失文件夹
-            if not os.path.exists(visualize_train_dir):
-                os.mkdir(visualize_train_dir)
-            if not os.path.exists(visualize_val_dir):
-                os.mkdir(visualize_val_dir)
-
-            np.savez(
-                os.path.join(
-                    visualize_train_dir,
-                    SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=MSE_Loss,
-            )
-
-            np.savez(
-                os.path.join(
-                    visualize_val_dir,
-                    f"test_" + SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=VAL_MSE_Loss,
-            )
-
-            np.savez(
-                os.path.join(
-                    visualize_train_dir,
-                    SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=R2_Score,
-            )
-
-            np.savez(
-                os.path.join(
-                    visualize_val_dir,
-                    f"test_" + SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=VAL_R2_Score,
-            )
-
-            np.savez(
-                os.path.join(
-                    visualize_train_dir,
-                    SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=RMSE_Loss,
-            )
-
-            np.savez(
-                os.path.join(
-                    visualize_val_dir,
-                    f"test_" + SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=VAL_RMSE_Loss,
-            )
-
-            print(f"save success")
-        else:
-            print(f"save cancel, discard data")
+writer = SummaryWriter("./tensorboard_logs")
 
 
 def train_single_modal(
@@ -685,20 +501,6 @@ def train_fusion_model(
         visualize_val_dir (str, optional): _description_. Defaults to None.
         start_lr (float, optional): _description_. Defaults to 1e-4.
     """
-    # (
-    #     waveform_list_train,
-    #     waveform_list_test,
-    #     text_list_train,
-    #     text_list_test,
-    #     label_train,
-    #     label_test,
-    # ) = get_raw_trimodal_ndarray_dataset(
-    #     train=True,
-    #     binary_label=binary_label,
-    #     resample=resample,
-    #     resample_rate=resample_rate,
-    #     concat_num=3,
-    # )
 
     train_dataloader, val_dataloader = get_trimodal_dataloader(
         batch_size=BATCH_SIZE, resmaple_rate=resample_rate
@@ -717,14 +519,6 @@ def train_fusion_model(
 
     model.to(device)
     model.train()
-    BCE_Loss = []
-    PRECISION_SCORE = []
-    RECALL_SCORE = []
-    F1_SCORE = []
-    VAL_BCE_Loss = []
-    VAL_PRECISION_SCORE = []
-    VAL_RECALL_SCORE = []
-    VAL_F1_SCORE = []
     cur_epoch = 0
 
     try:
@@ -755,10 +549,7 @@ def train_fusion_model(
                 bce_loss = bce_loss.item()
                 epoch_bce += bce_loss
                 print(f"bce_loss = {bce_loss:>12f} ---[{current:>5d}/{size:>5d}]")
-
             epoch_bce /= size
-
-            BCE_Loss.append(epoch_bce)
             print(f"train bce_loss = {epoch_bce:>12f}")
             scheduler.step()
 
@@ -768,9 +559,19 @@ def train_fusion_model(
             p = precision_score(y_true, y_pred, average="binary")
             r = recall_score(y_true, y_pred, average="binary")
             f1 = f1_score(y_true, y_pred, average="binary")
-            PRECISION_SCORE.append(p)
-            RECALL_SCORE.append(r)
-            F1_SCORE.append(f1)
+
+            # 进行数据记录与可视化
+            writer.add_scalars(
+                main_tag="train",
+                tag_scalar_dict={
+                    "bce_loss": epoch_bce,
+                    "precision": p,
+                    "recall": r,
+                    "f1score": f1,
+                },
+                global_step=cur_epoch,
+            )
+
             print(f"train precision = {p}, recall = {r}, f1score = {f1}")
 
             # ===============================================================================================================================
@@ -795,7 +596,6 @@ def train_fusion_model(
 
                     val_bce_loss += bce_loss.item()
             val_bce_loss /= num_batches
-            VAL_BCE_Loss.append(val_bce_loss)
             print(f"val  bce_loss = {val_bce_loss:>12f}")
 
             # 进行分类计算
@@ -822,10 +622,18 @@ def train_fusion_model(
             r = recall_score(y_true, y_pred, average="binary")
             f1score = f1_score(y_true, y_pred, average="binary")
 
-            VAL_PRECISION_SCORE.append(p)
-            VAL_RECALL_SCORE.append(r)
-            VAL_F1_SCORE.append(f1score)
-            print(f"precision = {p}, recall = {r}, f1score = {f1score}")
+            writer.add_scalars(
+                main_tag="val",
+                tag_scalar_dict={
+                    "bce_loss": val_bce_loss,
+                    "precision": p,
+                    "recall": r,
+                    "f1score": f1score,
+                },
+                global_step=cur_epoch,
+            )
+
+            # print(f"precision = {p}, recall = {r}, f1score = {f1score}")
             model.train()
 
             # save model parameters each [save_interval] epochs
@@ -837,93 +645,94 @@ def train_fusion_model(
             cur_epoch = eph
 
     finally:
-        print(f"Are you sure to save loss data? [y/n]")
-        y = input()
-        if y == "y" or y == "Y":
-            print(f"saving loss data" + "*" * 20)
+        print("over")
+        # print(f"Are you sure to save loss data? [y/n]")
+        # y = input()
+        # if y == "y" or y == "Y":
+        #     print(f"saving loss data" + "*" * 20)
 
-            # 创建对应的损失文件夹
-            if not os.path.exists(visualize_train_dir):
-                os.mkdir(visualize_train_dir)
-            if not os.path.exists(visualize_val_dir):
-                os.mkdir(visualize_val_dir)
+        #     # 创建对应的损失文件夹
+        #     if not os.path.exists(visualize_train_dir):
+        #         os.mkdir(visualize_train_dir)
+        #     if not os.path.exists(visualize_val_dir):
+        #         os.mkdir(visualize_val_dir)
 
-            train_loss_save_dir = os.path.join(visualize_train_dir, save_model_name)
-            val_loss_save_dir = os.path.join(visualize_val_dir, save_model_name)
+        #     train_loss_save_dir = os.path.join(visualize_train_dir, save_model_name)
+        #     val_loss_save_dir = os.path.join(visualize_val_dir, save_model_name)
 
-            if not os.path.exists(train_loss_save_dir):
-                os.mkdir(train_loss_save_dir)
+        #     if not os.path.exists(train_loss_save_dir):
+        #         os.mkdir(train_loss_save_dir)
 
-            if not os.path.exists(val_loss_save_dir):
-                os.mkdir(val_loss_save_dir)
+        #     if not os.path.exists(val_loss_save_dir):
+        #         os.mkdir(val_loss_save_dir)
 
-            np.savez(
-                os.path.join(
-                    train_loss_save_dir,
-                    SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=BCE_Loss,
-            )
+        #     # np.savez(
+        #     #     os.path.join(
+        #     #         train_loss_save_dir,
+        #     #         SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
+        #     #     ),
+        #     #     data=BCE_Loss,
+        #     # )
 
-            np.savez(
-                os.path.join(
-                    val_loss_save_dir,
-                    SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=VAL_BCE_Loss,
-            )
+        #     # np.savez(
+        #     #     os.path.join(
+        #     #         val_loss_save_dir,
+        #     #         SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
+        #     #     ),
+        #     #     data=VAL_BCE_Loss,
+        #     # )
 
-            np.savez(
-                os.path.join(
-                    train_loss_save_dir,
-                    SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=PRECISION_SCORE,
-            )
+        #     # np.savez(
+        #     #     os.path.join(
+        #     #         train_loss_save_dir,
+        #     #         SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
+        #     #     ),
+        #     #     data=PRECISION_SCORE,
+        #     # )
 
-            np.savez(
-                os.path.join(
-                    val_loss_save_dir,
-                    SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=VAL_PRECISION_SCORE,
-            )
+        #     # np.savez(
+        #     #     os.path.join(
+        #     #         val_loss_save_dir,
+        #     #         SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
+        #     #     ),
+        #     #     data=VAL_PRECISION_SCORE,
+        #     # )
 
-            np.savez(
-                os.path.join(
-                    train_loss_save_dir,
-                    SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=RECALL_SCORE,
-            )
+        #     # np.savez(
+        #     #     os.path.join(
+        #     #         train_loss_save_dir,
+        #     #         SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
+        #     #     ),
+        #     #     data=RECALL_SCORE,
+        #     # )
 
-            np.savez(
-                os.path.join(
-                    val_loss_save_dir,
-                    SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=VAL_RECALL_SCORE,
-            )
+        #     # np.savez(
+        #     #     os.path.join(
+        #     #         val_loss_save_dir,
+        #     #         SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
+        #     #     ),
+        #     #     data=VAL_RECALL_SCORE,
+        #     # )
 
-            np.savez(
-                os.path.join(
-                    train_loss_save_dir,
-                    SAVE_LOSS_NAME[3] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=F1_SCORE,
-            )
+        #     # np.savez(
+        #     #     os.path.join(
+        #     #         train_loss_save_dir,
+        #     #         SAVE_LOSS_NAME[3] + f"_epoch_to_{str(cur_epoch)}",
+        #     #     ),
+        #     #     data=F1_SCORE,
+        #     # )
 
-            np.savez(
-                os.path.join(
-                    val_loss_save_dir,
-                    SAVE_LOSS_NAME[3] + f"_epoch_to_{str(cur_epoch)}",
-                ),
-                data=VAL_F1_SCORE,
-            )
+        #     # np.savez(
+        #     #     os.path.join(
+        #     #         val_loss_save_dir,
+        #     #         SAVE_LOSS_NAME[3] + f"_epoch_to_{str(cur_epoch)}",
+        #     #     ),
+        #     #     data=VAL_F1_SCORE,
+        #     )
 
-            print(f"save success")
-        else:
-            print(f"save cancel, discard data")
+        #     print(f"save success")
+        # else:
+        #     print(f"save cancel, discard data")
 
 
 def test_fusion_model(
@@ -1124,11 +933,11 @@ if __name__ == "__main__":
         model=model,
         resample_rate=8000,
         load_epoch=0,
-        end_epoch=30,
+        end_epoch=20,
         save_interval=1,
         checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/fusion_model_resample_augmentation",
         save_model_name="fusion_model_resample_augmentation",
-        start_lr=1e-6,
+        start_lr=1e-5,
     )
 
     # test_fusion_model(
