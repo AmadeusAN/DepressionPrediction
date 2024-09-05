@@ -30,11 +30,22 @@ TEXT_NAME_LIST = ["negative.txt", "neutral.txt", "positive.txt"]
 
 
 class trimodal_dataset(Dataset):
-    def __init__(self, waveform_list: list, text_list: list, label_list: list):
+    def __init__(
+        self,
+        waveform_list: list,
+        text_list: list,
+        label_list: list,
+        bianry_label: bool = True,
+    ):
         super(trimodal_dataset, self).__init__()
         self.waveform_list = waveform_list
         self.text_list = text_list
-        self.label_list = label_list
+        self.label_list = (
+            label_list
+            if bianry_label
+            else torch.unsqueeze(torch.tensor(label_list, dtype=torch.float32), dim=-1)
+            / 100
+        )
 
     def __len__(self):
         return len(self.waveform_list)
@@ -43,12 +54,14 @@ class trimodal_dataset(Dataset):
         return self.waveform_list[index], self.text_list[index], self.label_list[index]
 
 
-def generate_train_val_dataset(resample_rate: int = 8000):
+def generate_train_val_dataset(resample_rate: int = 8000, binary_label: bool = False):
     dir_list = sorted(os.listdir(TRAIN_DATASET_DIR), key=int)
     depression_waveform_list = []
     depression_text_list = []
+    depression_label_list = []
     undepression_waveform_list = []
     undepression_text_list = []
+    undepression_label_list = []
 
     if resample_rate != 16000:
         resampler = torchaudio.transforms.Resample(
@@ -76,11 +89,15 @@ def generate_train_val_dataset(resample_rate: int = 8000):
             depression_waveform_list += waveform_list
             # depression_text_list.append("".join(text_list))
             depression_text_list += text_list
+
+            depression_label_list += [label] * 3
         else:
             # undepression_waveform_list.append(torch.concat(waveform_list, dim=-1))
             # undepression_text_list.append("".join(text_list))
             undepression_waveform_list += waveform_list
             undepression_text_list += text_list
+
+            undepression_label_list += [label] * 3
 
     # 先进行划分
     (
@@ -88,9 +105,12 @@ def generate_train_val_dataset(resample_rate: int = 8000):
         val_depression_waveform_list,
         train_depression_text_list,
         val_depression_text_list,
+        train_depression_label_list,
+        val_depression_label_list,
     ) = train_test_split(
         depression_waveform_list,
         depression_text_list,
+        depression_label_list,
         test_size=0.2,
         random_state=42,
     )
@@ -99,18 +119,27 @@ def generate_train_val_dataset(resample_rate: int = 8000):
         val_undepression_waveform_list,
         train_undepression_text_list,
         val_undepression_text_list,
+        train_undepression_label_list,
+        val_undepression_label_list,
     ) = train_test_split(
         undepression_waveform_list,
         undepression_text_list,
+        undepression_label_list,
         test_size=0.2,
         random_state=42,
     )
 
     # 再进行过采样
     positive_sample_num = len(train_undepression_waveform_list)
-    train_depression_waveform_list, train_depression_text_list = apply_oversample(
+    (
         train_depression_waveform_list,
         train_depression_text_list,
+        train_depression_label_list,
+    ) = apply_oversample(
+        train_depression_waveform_list,
+        train_depression_text_list,
+        train_depression_label_list,
+        binary_label=binary_label,
         target_num=positive_sample_num,
     )
 
@@ -119,13 +148,16 @@ def generate_train_val_dataset(resample_rate: int = 8000):
         train_depression_waveform_list + train_undepression_waveform_list
     )
     train_text_list = train_depression_text_list + train_undepression_text_list
-    train_label_list = torch.cat(
-        [
-            torch.ones(len(train_depression_waveform_list)),
-            torch.zeros(len(train_undepression_waveform_list)),
-        ],
-        dim=-1,
-    )
+    if binary_label:
+        train_label_list = torch.cat(
+            [
+                torch.ones(len(train_depression_waveform_list)),
+                torch.zeros(len(train_undepression_waveform_list)),
+            ],
+            dim=-1,
+        )
+    else:
+        train_label_list = train_depression_label_list + train_undepression_label_list
 
     train_waveform_list, train_text_list, train_label_list = apply_augmentation(
         train_waveform_list,
@@ -136,17 +168,25 @@ def generate_train_val_dataset(resample_rate: int = 8000):
 
     val_waveform_list = val_depression_waveform_list + val_undepression_waveform_list
     val_text_list = val_depression_text_list + val_undepression_text_list
-    val_label_list = torch.cat(
-        [
-            torch.ones(len(val_depression_waveform_list)),
-            torch.zeros(len(val_undepression_waveform_list)),
-        ],
-        dim=-1,
-    )
+    if binary_label:
+        val_label_list = torch.cat(
+            [
+                torch.ones(len(val_depression_waveform_list)),
+                torch.zeros(len(val_undepression_waveform_list)),
+            ],
+            dim=-1,
+        )
+    else:
+        val_label_list = val_depression_label_list + val_undepression_label_list
 
     return trimodal_dataset(
-        train_waveform_list, train_text_list, train_label_list
-    ), trimodal_dataset(val_waveform_list, val_text_list, val_label_list)
+        train_waveform_list,
+        train_text_list,
+        train_label_list,
+        bianry_label=binary_label,
+    ), trimodal_dataset(
+        val_waveform_list, val_text_list, val_label_list, bianry_label=binary_label
+    )
 
 
 def get_raw_waveform_text_label(
@@ -272,7 +312,13 @@ def apply_augmentation(waveform_list, text_list, label_list, sample_rate: int = 
     return new_waveform_list, new_text_list, new_label_list
 
 
-def apply_oversample(waveform_list, text_list, target_num: int = 1000):
+def apply_oversample(
+    waveform_list,
+    text_list,
+    label_list,
+    binary_label: bool = True,
+    target_num: int = 1000,
+):
     """将waveform_list进行过采样，以扩充数据集。
 
     Args:
@@ -285,6 +331,7 @@ def apply_oversample(waveform_list, text_list, target_num: int = 1000):
 
     new_waveform_list = []
     new_text_list = []
+    new_label_list = []
     for _ in range(target_num):
         i = random.randint(0, len(waveform_list) - 1)
         new_waveform_list.append(
@@ -292,7 +339,19 @@ def apply_oversample(waveform_list, text_list, target_num: int = 1000):
             apply_randomgaussion_noise(waveform_list[i])
         )
         new_text_list.append(text_list[i])
-    return new_waveform_list, new_text_list
+        new_label_list.append(label_list[i])
+
+    if binary_label:
+        return new_waveform_list, new_text_list
+    else:
+        return new_waveform_list, new_text_list, new_label_list
+
+    # return (
+    #     new_waveform_list,
+    #     new_text_list,
+    #     new_label_list if not binary_label else new_waveform_list,
+    #     new_text_list,
+    # )
 
 
 @DeprecationWarning
@@ -443,5 +502,5 @@ if __name__ == "__main__":
 
     # generate_train_val_dataset()
 
-    a, b = generate_train_val_dataset()
+    a, b = generate_train_val_dataset(resample_rate=8000, binary_label=False)
     pass

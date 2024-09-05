@@ -37,7 +37,7 @@ START_LEARNING_RATE = 1e-4
 LR_MILESTONES = [10, 20, 30, 50, 80, 100, 200]
 
 device = (
-    "cuda:0"
+    "cuda:2"
     if torch.cuda.is_available()
     else "mps" if torch.backends.mps.is_available() else "cpu"
 )
@@ -506,7 +506,8 @@ def train_fusion_model(
         batch_size=BATCH_SIZE, resmaple_rate=resample_rate
     )
 
-    bce_loss_fn = torch.nn.BCEWithLogitsLoss()
+    # bce_loss_fn = torch.nn.BCEWithLogitsLoss()
+    mse_loss_fn = torch.nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=start_lr)
     scheduler = MultiStepLR(optimizer=optimizer, milestones=LR_MILESTONES, gamma=0.1)
 
@@ -528,9 +529,11 @@ def train_fusion_model(
             groundtruth = []
             predict = []
             print(f"epoch:{eph} ", "*" * 100)
-            epoch_bce = 0.0
+            # epoch_bce = 0.0
+            epoch_mse = 0.0
             for index, (w, t, y) in enumerate(train_dataloader):
-                groundtruth.append(1 if y == 1 else 0)
+                # groundtruth.append(1 if y == 1 else 0)
+                groundtruth.append(1 if y >= 0.53 else 0)
                 w, y = (
                     (torch.unsqueeze(torch.tensor(w).to(device), dim=0))
                     if not isinstance(w, torch.Tensor)
@@ -538,19 +541,26 @@ def train_fusion_model(
                 ), torch.unsqueeze(y, dim=0).to(device)
                 y_hat = model(w, t[0])
 
-                predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
-                bce_loss = bce_loss_fn(y_hat, y)
-                bce_loss.backward()
+                # predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
+                predict.append(1 if y_hat >= 0.53 else 0)
+                # bce_loss = bce_loss_fn(y_hat, y)
+                mse_loss = mse_loss_fn(y_hat, y)
+                # bce_loss.backward()
+                mse_loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
 
                 # record loss
                 current = index + 1
-                bce_loss = bce_loss.item()
-                epoch_bce += bce_loss
-                print(f"bce_loss = {bce_loss:>12f} ---[{current:>5d}/{size:>5d}]")
-            epoch_bce /= size
-            print(f"train bce_loss = {epoch_bce:>12f}")
+                # bce_loss = bce_loss.item()
+                # epoch_bce += bce_loss
+                epoch_mse += mse_loss.item()
+                # print(f"bce_loss = {bce_loss:>12f} ---[{current:>5d}/{size:>5d}]")
+                print(f"mse_loss = {mse_loss:>12f} ---[{current:>5d}/{size:>5d}]")
+            # epoch_bce /= size
+            epoch_mse /= size
+            # print(f"train bce_loss = {epoch_bce:>12f}")
+            print(f"train mse_loss = {epoch_mse:>12f}")
             scheduler.step()
 
             # 进行分类计算
@@ -563,8 +573,14 @@ def train_fusion_model(
             # 进行数据记录与可视化
             writer.add_scalars(
                 main_tag="train",
+                # tag_scalar_dict={
+                #     "bce_loss": epoch_bce,
+                #     "precision": p,
+                #     "recall": r,
+                #     "f1score": f1,
+                # },
                 tag_scalar_dict={
-                    "bce_loss": epoch_bce,
+                    "mse_loss": epoch_mse,
                     "precision": p,
                     "recall": r,
                     "f1score": f1,
@@ -578,12 +594,14 @@ def train_fusion_model(
             # validation logic
             model.eval()
             num_batches = len(val_dataloader)
-            val_bce_loss = 0.0
+            # val_bce_loss = 0.0
+            val_mse_loss = 0.0
             predict = []
             groundtruth = []
             with torch.no_grad():
                 for w, t, y in val_dataloader:
-                    groundtruth.append(1 if y == 1 else 0)
+                    # groundtruth.append(1 if y == 1 else 0)
+                    groundtruth.append(1 if y >= 0.53 else 0)
                     w, y = (
                         torch.unsqueeze(torch.tensor(w).to(device), dim=0)
                         if not isinstance(w, torch.Tensor)
@@ -591,12 +609,18 @@ def train_fusion_model(
                     ), torch.unsqueeze(y, dim=0).to(device)
 
                     y_hat = model(w, t[0])
-                    predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
-                    bce_loss = bce_loss_fn(y_hat, y)
+                    # predict.append(1 if nn.Sigmoid()(y_hat).item() >= 0.53 else 0)
+                    predict.append(1 if y_hat >= 0.53 else 0)
 
-                    val_bce_loss += bce_loss.item()
-            val_bce_loss /= num_batches
-            print(f"val  bce_loss = {val_bce_loss:>12f}")
+                    # bce_loss = bce_loss_fn(y_hat, y)
+                    mse_loss = mse_loss_fn(y_hat, y)
+
+                    # val_bce_loss += bce_loss.item()
+                    val_mse_loss += mse_loss.item()
+            # val_bce_loss /= num_batches
+            val_mse_loss /= num_batches
+            # print(f"val  bce_loss = {val_bce_loss:>12f}")
+            print(f"val  mse_loss = {val_mse_loss:>12f}")
 
             # 进行分类计算
             y_pred = np.array(predict)
@@ -624,8 +648,14 @@ def train_fusion_model(
 
             writer.add_scalars(
                 main_tag="val",
+                # tag_scalar_dict={
+                #     "bce_loss": val_bce_loss,
+                #     "precision": p,
+                #     "recall": r,
+                #     "f1score": f1score,
+                # },
                 tag_scalar_dict={
-                    "bce_loss": val_bce_loss,
+                    "mse_loss": val_mse_loss,
                     "precision": p,
                     "recall": r,
                     "f1score": f1score,
@@ -633,7 +663,7 @@ def train_fusion_model(
                 global_step=cur_epoch,
             )
 
-            # print(f"precision = {p}, recall = {r}, f1score = {f1score}")
+            print(f"precision = {p}, recall = {r}, f1score = {f1score}")
             model.train()
 
             # save model parameters each [save_interval] epochs
@@ -646,93 +676,6 @@ def train_fusion_model(
 
     finally:
         print("over")
-        # print(f"Are you sure to save loss data? [y/n]")
-        # y = input()
-        # if y == "y" or y == "Y":
-        #     print(f"saving loss data" + "*" * 20)
-
-        #     # 创建对应的损失文件夹
-        #     if not os.path.exists(visualize_train_dir):
-        #         os.mkdir(visualize_train_dir)
-        #     if not os.path.exists(visualize_val_dir):
-        #         os.mkdir(visualize_val_dir)
-
-        #     train_loss_save_dir = os.path.join(visualize_train_dir, save_model_name)
-        #     val_loss_save_dir = os.path.join(visualize_val_dir, save_model_name)
-
-        #     if not os.path.exists(train_loss_save_dir):
-        #         os.mkdir(train_loss_save_dir)
-
-        #     if not os.path.exists(val_loss_save_dir):
-        #         os.mkdir(val_loss_save_dir)
-
-        #     # np.savez(
-        #     #     os.path.join(
-        #     #         train_loss_save_dir,
-        #     #         SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
-        #     #     ),
-        #     #     data=BCE_Loss,
-        #     # )
-
-        #     # np.savez(
-        #     #     os.path.join(
-        #     #         val_loss_save_dir,
-        #     #         SAVE_LOSS_NAME[0] + f"_epoch_to_{str(cur_epoch)}",
-        #     #     ),
-        #     #     data=VAL_BCE_Loss,
-        #     # )
-
-        #     # np.savez(
-        #     #     os.path.join(
-        #     #         train_loss_save_dir,
-        #     #         SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
-        #     #     ),
-        #     #     data=PRECISION_SCORE,
-        #     # )
-
-        #     # np.savez(
-        #     #     os.path.join(
-        #     #         val_loss_save_dir,
-        #     #         SAVE_LOSS_NAME[1] + f"_epoch_to_{str(cur_epoch)}",
-        #     #     ),
-        #     #     data=VAL_PRECISION_SCORE,
-        #     # )
-
-        #     # np.savez(
-        #     #     os.path.join(
-        #     #         train_loss_save_dir,
-        #     #         SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
-        #     #     ),
-        #     #     data=RECALL_SCORE,
-        #     # )
-
-        #     # np.savez(
-        #     #     os.path.join(
-        #     #         val_loss_save_dir,
-        #     #         SAVE_LOSS_NAME[2] + f"_epoch_to_{str(cur_epoch)}",
-        #     #     ),
-        #     #     data=VAL_RECALL_SCORE,
-        #     # )
-
-        #     # np.savez(
-        #     #     os.path.join(
-        #     #         train_loss_save_dir,
-        #     #         SAVE_LOSS_NAME[3] + f"_epoch_to_{str(cur_epoch)}",
-        #     #     ),
-        #     #     data=F1_SCORE,
-        #     # )
-
-        #     # np.savez(
-        #     #     os.path.join(
-        #     #         val_loss_save_dir,
-        #     #         SAVE_LOSS_NAME[3] + f"_epoch_to_{str(cur_epoch)}",
-        #     #     ),
-        #     #     data=VAL_F1_SCORE,
-        #     )
-
-        #     print(f"save success")
-        # else:
-        #     print(f"save cancel, discard data")
 
 
 def test_fusion_model(
@@ -929,11 +872,17 @@ if __name__ == "__main__":
 
     # load fusion model
     model = SimpleFusionModel(device=device)
+
+    # 查看模型的参数量
+    print(sum([p.numel() for p in model.parameters()]))
+
+    print(sum([p.numel() for p in model.parameters() if not p.requires_grad]))
+
     train_fusion_model(
         model=model,
         resample_rate=8000,
         load_epoch=0,
-        end_epoch=20,
+        end_epoch=30,
         save_interval=1,
         checkpint_dir="/public1/cjh/workspace/DepressionPrediction/checkpoint/fusion_model_resample_augmentation",
         save_model_name="fusion_model_resample_augmentation",
